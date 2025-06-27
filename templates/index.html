@@ -1,66 +1,54 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>資料庫資料展示</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>獲利資料</title>
     <style>
-        /* 基本頁面設計 */
         body {
             font-family: Arial, sans-serif;
             background-color: #F4F1F0;
-            margin: 0;
-            padding: 0;
+            margin: 0; padding: 0;
             color: #4A4A4A;
         }
-
         h1 {
             text-align: center;
             margin-top: 50px;
             color: #6B6B6B;
             font-size: 2rem;
         }
-
-        /* 表格設計 */
         table {
             width: 80%;
             margin: 30px auto;
             border-collapse: collapse;
             background-color: #F9F9F9;
-            box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.1);
+            box-shadow: 0px 0px 15px rgba(0,0,0,0.1);
         }
-
         th, td {
             padding: 12px;
             border: 1px solid #DDD;
             text-align: left;
             font-size: 1rem;
         }
-
         th {
-            background-color: #E3D6D1;  /* 淡莫蘭迪色 */
+            background-color: #E3D6D1;
             color: #6B6B6B;
             font-weight: bold;
         }
-
         td {
             background-color: #F6F0EC;
             color: #6B6B6B;
         }
-
         tr:nth-child(even) td {
             background-color: #F1E6E1;
         }
-
         tr:hover td {
-            background-color: #E3D1C4;  /* 鼠標懸停時顯示的顏色 */
+            background-color: #E3D1C4;
         }
-
-        /* 美化頁面按鈕 */
         .btn {
             display: inline-block;
             padding: 10px 20px;
-            background-color: #B1A7A6;  /* 按鈕背景色 */
+            background-color: #B1A7A6;
             color: #fff;
             text-decoration: none;
             font-size: 1rem;
@@ -68,14 +56,85 @@
             text-align: center;
             margin-top: 20px;
         }
-
         .btn:hover {
-            background-color: #8D7876;  /* 按鈕懸停效果 */
+            background-color: #8D7876;
+        }
+        .message.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        form#profitForm {
+            max-width: 400px;
+            margin: 50px auto 50px auto;
+            background: #fff;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+        label {
+            display: block;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+        select, input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            margin-top: 6px;
+            box-sizing: border-box;
+        }
+        #profitForm div.buttons {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+        }
+        #profitForm button {
+            width: 48%;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            color: white;
+        }
+        #addBtn {
+            background-color: #A3B18A;       /* 莫蘭迪綠灰 */
+        }
+        #addBtn:hover {
+            background-color: #A38D85;       /* 深棕紅灰 */
+        }
+
+        #updateBtn {
+            background-color: #9E9D89;       /* 莫蘭迪灰粉棕 */
+        }
+        #updateBtn:hover {
+            background-color: #8C7F7C;       /* 深一點的莫蘭迪灰棕 */
+        }
+
+        #deleteBtn {
+            background-color: #C28888;       /* 莫蘭迪粉灰紅（柔和版紅色） */
+        }
+        #deleteBtn:hover {
+            background-color: #A18680;       /* 深一階灰紅（更穩重） */
+        }
+
+        #message {
+            max-width: 400px;
+            margin: 0 auto 50px auto;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            text-align: center;
+            display: none;
         }
     </style>
 </head>
 <body>
-    <h1>資料庫資料展示</h1>
+
+    <h1>獲利資料</h1>
 
     <table>
         <thead>
@@ -89,17 +148,181 @@
             {% for row in data.itertuples() %}
                 <tr>
                     {% for value in row[1:] %}
-                        <td>{{ value }}</td>
+                        {% if loop.index0 == 0 and (value == '初始投資' or value == '剩餘金額') %}
+                            <th scope="row">{{ value }}</th>
+                        {% else %}
+                            <td>{{ value }}</td>
+                        {% endif %}
                     {% endfor %}
                 </tr>
             {% endfor %}
         </tbody>
     </table>
 
+    <h2 style="text-align:center;">編輯最新月份獲利資料</h2>
+    <form id="profitForm">
+        <label for="store">選擇店鋪</label>
+        <select id="store" name="store_id" required>
+            <option value="">請選擇</option>
+            <option value="1">伸港店</option>
+            <option value="2">嶺東店</option>
+            <option value="3">大甲店</option>
+        </select>
+
+        <label for="profit">輸入獲利金額 (整數)</label>
+        <input type="number" id="profit" name="profit" min="0" step="1" required />
+
+        <div class="buttons">
+            <button type="button" id="addBtn">新增</button>
+            <button type="button" id="updateBtn">修改</button>
+            <button type="button" id="deleteBtn">刪除</button>
+        </div>
+    </form>
+
+    <div id="message" class="message"></div>
+
+    <script>
+        const addBtn = document.getElementById('addBtn');
+        const updateBtn = document.getElementById('updateBtn');
+        const deleteBtn = document.getElementById('deleteBtn');
+        const messageDiv = document.getElementById('message');
+        const storeSelect = document.getElementById('store');
+        const profitInput = document.getElementById('profit');
+
+        function showMessage(text, type = 'success') {
+            messageDiv.textContent = text;
+            messageDiv.className = 'message ' + (type === 'success' ? 'success' : 'error');
+            messageDiv.style.display = 'block';
+        }
+
+        function hideMessage() {
+            messageDiv.style.display = 'none';
+        }
+
+        // 店鋪切換時自動載入最新獲利
+        storeSelect.addEventListener('change', () => {
+            hideMessage();
+            const store_id = storeSelect.value;
+            if (!store_id) {
+                profitInput.value = '';
+                return;
+            }
+
+            fetch(`/api/profit/latest/${store_id}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.profit !== null && data.profit !== undefined) {
+                        profitInput.value = data.profit;
+                    } else {
+                        profitInput.value = '';
+                    }
+                })
+                .catch(() => {
+                    profitInput.value = '';
+                });
+        });
+
+        addBtn.addEventListener('click', () => {
+            hideMessage();
+            const store_id = storeSelect.value;
+            const profit = profitInput.value;
+
+            if (!store_id) {
+                showMessage('請選擇店鋪', 'error');
+                return;
+            }
+            if (!profit || profit < 0) {
+                showMessage('請輸入有效的獲利金額', 'error');
+                return;
+            }
+
+            fetch('/api/profit/add', {   // 你需要在後端寫 add API
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({store_id: Number(store_id), profit: Number(profit)})
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    showMessage(data.error, 'error');
+                } else {
+                    showMessage(data.message || '新增成功');
+                }
+            })
+            .catch(() => {
+                showMessage('新增失敗，請稍後再試', 'error');
+            });
+        });
+
+        updateBtn.addEventListener('click', () => {
+            hideMessage();
+            const store_id = storeSelect.value;
+            const profit = profitInput.value;
+
+            if (!store_id) {
+                showMessage('請選擇店鋪', 'error');
+                return;
+            }
+            if (!profit || profit < 0) {
+                showMessage('請輸入有效的獲利金額', 'error');
+                return;
+            }
+
+            fetch('/api/profit/update', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({store_id: Number(store_id), profit: Number(profit)})
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    showMessage(data.error, 'error');
+                } else {
+                    showMessage(data.message || '更新成功');
+                }
+            })
+            .catch(() => {
+                showMessage('更新失敗，請稍後再試', 'error');
+            });
+        });
+
+        deleteBtn.addEventListener('click', () => {
+            hideMessage();
+            const store_id = storeSelect.value;
+
+            if (!store_id) {
+                showMessage('請選擇店鋪', 'error');
+                return;
+            }
+
+            if (!confirm('確定要刪除該店鋪最新月份的獲利資料嗎？')) {
+                return;
+            }
+
+            fetch('/api/profit/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({store_id: Number(store_id)})
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    showMessage(data.error, 'error');
+                } else {
+                    showMessage(data.message || '刪除成功');
+                    profitInput.value = '';
+                }
+            })
+            .catch(() => {
+                showMessage('刪除失敗，請稍後再試', 'error');
+            });
+        });
+    </script>
 
     <div style="text-align: center;">
         <a href="/" class="btn">回到首頁</a>
         <a href="{{ url_for('chart') }}" class="btn">前往獲利折線圖頁面</a>
     </div>
+
 </body>
 </html>

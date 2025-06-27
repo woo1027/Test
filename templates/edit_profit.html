@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>編輯最新月份獲利資料</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f1f0;
+            padding: 20px;
+            color: #4a4a4a;
+        }
+        h1 {
+            text-align: center;
+            color: #6b6b6b;
+            margin-bottom: 30px;
+        }
+        form {
+            max-width: 400px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+        label {
+            display: block;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+        select, input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            margin-top: 6px;
+            box-sizing: border-box;
+        }
+        button {
+            margin-top: 20px;
+            width: 48%;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            cursor: pointer;
+            color: white;
+        }
+        button.update {
+            background-color: #b1a7a6;
+        }
+        button.update:hover {
+            background-color: #8d7876;
+        }
+        button.delete {
+            background-color: #d9534f;
+        }
+        button.delete:hover {
+            background-color: #c9302c;
+        }
+        .message {
+            max-width: 400px;
+            margin: 20px auto;
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .message.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+
+<h1>編輯最新月份獲利資料</h1>
+
+<form id="profitForm">
+    <label for="store">選擇店鋪</label>
+    <select id="store" name="store_id" required>
+        <option value="">請選擇</option>
+        <option value="1">伸港店</option>
+        <option value="2">嶺東店</option>
+        <option value="3">大甲店</option>
+    </select>
+
+    <label for="profit">輸入獲利金額 (整數)</label>
+    <input type="number" id="profit" name="profit" min="0" required />
+
+    <div style="display: flex; justify-content: space-between;">
+        <button type="button" class="update" id="updateBtn">新增 / 修改</button>
+        <button type="button" class="delete" id="deleteBtn">刪除</button>
+    </div>
+</form>
+
+<div id="message" class="message" style="display:none;"></div>
+
+<script>
+const updateBtn = document.getElementById('updateBtn');
+const deleteBtn = document.getElementById('deleteBtn');
+const messageDiv = document.getElementById('message');
+const storeSelect = document.getElementById('store');
+const profitInput = document.getElementById('profit');
+
+function showMessage(text, type = 'success') {
+    messageDiv.textContent = text;
+    messageDiv.className = 'message ' + (type === 'success' ? 'success' : 'error');
+    messageDiv.style.display = 'block';
+}
+
+function hideMessage() {
+    messageDiv.style.display = 'none';
+}
+
+updateBtn.addEventListener('click', () => {
+    hideMessage();
+    const store_id = storeSelect.value;
+    const profit = profitInput.value;
+
+    if (!store_id) {
+        showMessage('請選擇店鋪', 'error');
+        return;
+    }
+    if (!profit || profit < 0) {
+        showMessage('請輸入有效的獲利金額', 'error');
+        return;
+    }
+
+    fetch('/api/profit/update', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({store_id: Number(store_id), profit: Number(profit)})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) {
+            showMessage(data.error, 'error');
+        } else {
+            showMessage(data.message || '更新成功');
+        }
+    })
+    .catch(err => {
+        showMessage('更新失敗，請稍後再試', 'error');
+        console.error(err);
+    });
+});
+
+deleteBtn.addEventListener('click', () => {
+    hideMessage();
+    const store_id = storeSelect.value;
+
+    if (!store_id) {
+        showMessage('請選擇店鋪', 'error');
+        return;
+    }
+
+    if (!confirm('確定要刪除該店鋪最新月份的獲利資料嗎？')) {
+        return;
+    }
+
+    fetch('/api/profit/delete', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({store_id: Number(store_id)})
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) {
+            showMessage(data.error, 'error');
+        } else {
+            showMessage(data.message || '刪除成功');
+            profitInput.value = '';
+        }
+    })
+    .catch(err => {
+        showMessage('刪除失敗，請稍後再試', 'error');
+        console.error(err);
+    });
+});
+</script>
+
+</body>
+</html>
