@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資料庫資料展示</title>
+    <style>
+        /* 基本頁面設計 */
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #F4F1F0;
+            margin: 0;
+            padding: 0;
+            color: #4A4A4A;
+        }
+
+        h1 {
+            text-align: center;
+            margin-top: 50px;
+            color: #6B6B6B;
+            font-size: 2rem;
+        }
+
+        /* 表格設計 */
+        table {
+            width: 80%;
+            margin: 30px auto;
+            border-collapse: collapse;
+            background-color: #F9F9F9;
+            box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        th, td {
+            padding: 12px;
+            border: 1px solid #DDD;
+            text-align: left;
+            font-size: 1rem;
+        }
+
+        th {
+            background-color: #E3D6D1;  /* 淡莫蘭迪色 */
+            color: #6B6B6B;
+            font-weight: bold;
+        }
+
+        td {
+            background-color: #F6F0EC;
+            color: #6B6B6B;
+        }
+
+        tr:nth-child(even) td {
+            background-color: #F1E6E1;
+        }
+
+        tr:hover td {
+            background-color: #E3D1C4;  /* 鼠標懸停時顯示的顏色 */
+        }
+
+        /* 美化頁面按鈕 */
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #B1A7A6;  /* 按鈕背景色 */
+            color: #fff;
+            text-decoration: none;
+            font-size: 1rem;
+            border-radius: 5px;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .btn:hover {
+            background-color: #8D7876;  /* 按鈕懸停效果 */
+        }
+    </style>
+</head>
+<body>
+    <h1>資料庫資料展示</h1>
+
+    <table>
+        <thead>
+            <tr>
+                {% for column in data.columns %}
+                    <th>{{ column }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in data.itertuples() %}
+                <tr>
+                    {% for value in row[1:] %}
+                        <td>{{ value }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+
+    <div style="text-align: center;">
+        <a href="/" class="btn">回到首頁</a>
+        <a href="{{ url_for('chart') }}" class="btn">前往獲利折線圖頁面</a>
+    </div>
+</body>
+</html>

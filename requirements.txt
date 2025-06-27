@@ -1,0 +1,6 @@
+numpy
+polars
+pandas
+pymssql
+pyarrow
+flask

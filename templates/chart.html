@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <title>店鋪獲利折線圖</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* 基本頁面設計 */
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #F4F1F0;
+            margin: 0;
+            padding: 0;
+            color: #4A4A4A;
+
+            /* 新增這兩行讓內容水平+垂直置中 */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+
+            min-height: 100vh; /* 讓 body 滿高，垂直置中有效 */
+        }
+
+
+        h1 {
+            text-align: center;
+            margin-top: 50px;
+            color: #6B6B6B;
+            font-size: 2rem;
+        }
+
+
+        /* 表格設計 */
+        table {
+            width: 80%;
+            margin: 30px auto;
+            border-collapse: collapse;
+            background-color: #F9F9F9;
+            box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        th, td {
+            padding: 12px;
+            border: 1px solid #DDD;
+            text-align: left;
+            font-size: 1rem;
+        }
+
+        th {
+            background-color: #E3D6D1;  /* 淡莫蘭迪色 */
+            color: #6B6B6B;
+            font-weight: bold;
+        }
+
+        td {
+            background-color: #F6F0EC;
+            color: #6B6B6B;
+        }
+
+        tr:nth-child(even) td {
+            background-color: #F1E6E1;
+        }
+
+        tr:hover td {
+            background-color: #E3D1C4;  /* 鼠標懸停時顯示的顏色 */
+        }
+
+        /* 美化頁面按鈕 */
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #B1A7A6;  /* 按鈕背景色 */
+            color: #fff;
+            text-decoration: none;
+            font-size: 1rem;
+            border-radius: 5px;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .btn:hover {
+            background-color: #8D7876;  /* 按鈕懸停效果 */
+        }
+
+        select {
+                padding: 8px 12px;
+                font-size: 16px;
+                margin: 15px 0;
+                width: 200px;  /* 固定寬度置中比較美 */
+        }
+
+        #chart-container {
+                        width: 90vw;
+                        max-width: 800px;
+                        margin: 0 auto 40px auto;
+        }
+
+    </style>
+</head>
+<body>
+    <h1>店鋪獲利折線圖</h1>
+    <label for="store-select">選擇店鋪：</label>
+    <select id="store-select">
+        <option value="1">伸港店</option>
+        <option value="2">嶺東店</option>
+        <option value="3">大甲店</option>
+    </select>
+
+    <div id="chart-container">
+        <canvas id="profitChart"></canvas>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('profitChart').getContext('2d');
+        let chart;
+
+        function fetchAndRender(storeId) {
+            const storeNames = {
+                1: '伸港店',
+                2: '嶺東店',
+                3: '大甲店'
+            };
+            fetch(`/api/profit/${storeId}`)
+                .then(res => res.json())
+                .then(data => {
+                    const { dates, profits } = data;
+                    if (chart) {
+                        chart.destroy();
+                    }
+                    chart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: dates,
+                            datasets: [{
+                                label: `${storeNames[storeId]}獲利`,
+                                data: profits,
+                                borderColor: '#B1A7A6',
+                                backgroundColor: 'rgba(177,167,166,0.3)',
+                                fill: true,
+                                tension: 0.1,
+                                pointRadius: 4,
+                                pointHoverRadius: 6
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    title: { display: true, text: '獲利金額' }
+                                },
+                                x: {
+                                    title: { display: true, text: '年月' }
+                                }
+                            }
+                        }
+                    });
+                });
+        }
+
+        // 頁面載入時先畫店鋪1圖
+        fetchAndRender(1);
+
+        // 切換店鋪時重新抓資料畫圖
+        document.getElementById('store-select').addEventListener('change', e => {
+            fetchAndRender(e.target.value);
+        });
+
+    </script>
+
+
+    <div style="text-align: center;">
+        <a href="/" class="btn">回到首頁</a>
+    </div>
+</body>
+</html>
