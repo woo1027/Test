@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>還款紀錄表</title>
   <style>
     :root {
@@ -11,7 +11,6 @@
       --accent: #c9bcbc;
       --text: #4a4a4a;
     }
-
     body {
       font-family: "Noto Sans TC", sans-serif;
       background-color: var(--bg);
@@ -19,13 +18,11 @@
       margin: 0;
       padding: 30px;
     }
-
     h1 {
       text-align: center;
       color: var(--primary);
       margin-bottom: 20px;
     }
-
     .card {
       background: var(--card);
       border-radius: 12px;
@@ -34,12 +31,10 @@
       margin: auto;
       box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     }
-
     p strong {
       font-size: 1.2em;
       color: var(--primary);
     }
-
     form {
       margin-top: 20px;
       display: flex;
@@ -47,15 +42,14 @@
       gap: 10px;
       align-items: center;
     }
-
-    input[type="number"],
-    input[type="text"] {
+    select,
+    input[type="number"] {
       padding: 8px;
       border: 1px solid #ccc;
       border-radius: 8px;
       font-size: 1em;
+      width: 140px;
     }
-
     button {
       background-color: var(--primary);
       color: white;
@@ -66,11 +60,9 @@
       cursor: pointer;
       transition: background-color 0.3s;
     }
-
     button:hover {
       background-color: #8d928b;
     }
-
     table {
       width: 100%;
       margin-top: 25px;
@@ -80,30 +72,29 @@
       overflow: hidden;
       box-shadow: 0 2px 8px rgba(0,0,0,0.05);
     }
-
     th, td {
       border: 1px solid #ddd;
       padding: 12px;
       text-align: center;
     }
-
     th {
       background-color: var(--accent);
       color: #fff;
     }
-
     tr:nth-child(even) {
       background-color: #f9f9f9;
     }
-
     tr:hover {
       background-color: #f1f1f1;
     }
-
     @media (max-width: 600px) {
       form {
         flex-direction: column;
         align-items: stretch;
+      }
+      select,
+      input[type="number"] {
+        width: 100%;
       }
     }
   </style>
@@ -113,13 +104,13 @@
     <h1>每月還款紀錄</h1>
 
     <p>總借款金額：<strong>240,000</strong> 元</p>
-    <p>剩餘金額：<strong id="remaining">160000</strong> 元</p>
+    <p>剩餘金額：<strong id="remaining">240,000</strong> 元</p>
 
     <form id="repayment-form">
       <label for="month">月份：</label>
-      <input type="text" id="month" placeholder="2025-06" required>
+      <select id="month"></select>
       <label for="amount">還款金額：</label>
-      <input type="number" id="amount" required>
+      <input type="number" id="amount" required min="1" />
       <button type="submit">紀錄還款</button>
     </form>
 
@@ -137,58 +128,79 @@
   </div>
 
   <script>
-    let totalLoan = 160000;
+    const totalLoan = 240000;
     let repayments = JSON.parse(localStorage.getItem('repayments')) || [];
 
+    // 產生未來 n 個月的月份選項
+    function generateMonthOptions(n = 12) {
+      const select = document.getElementById('month');
+      const now = new Date();
+      select.innerHTML = ''; // 清空舊選項
+      for (let i = 0; i < n; i++) {
+        const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const option = document.createElement('option');
+        option.value = `${year}-${month}`;
+        option.textContent = `${year}-${month}`;
+        select.appendChild(option);
+      }
+    }
+
     function updateTable() {
-      const table = document.querySelector('#repayment-table tbody');
-      table.innerHTML = "";
+      const tbody = document.querySelector('#repayment-table tbody');
+      tbody.innerHTML = '';
       let remaining = totalLoan;
 
       repayments.forEach((entry, index) => {
-        const row = table.insertRow();
+        const row = tbody.insertRow();
         row.insertCell(0).textContent = entry.month;
         row.insertCell(1).textContent = entry.amount.toLocaleString();
         remaining -= entry.amount;
         row.insertCell(2).textContent = remaining.toLocaleString();
 
+        const btnCell = row.insertCell(3);
         const delBtn = document.createElement('button');
-        delBtn.textContent = "刪除";
+        delBtn.textContent = '刪除';
         delBtn.onclick = () => {
           repayments.splice(index, 1);
           localStorage.setItem('repayments', JSON.stringify(repayments));
           updateTable();
         };
-        const btnCell = row.insertCell(3);
         btnCell.appendChild(delBtn);
       });
 
-      document.getElementById('remaining').textContent =
-        (totalLoan - repayments.reduce((sum, e) => sum + e.amount, 0)).toLocaleString();
+      document.getElementById('remaining').textContent = remaining.toLocaleString();
     }
 
-    document.getElementById('repayment-form').addEventListener('submit', function (e) {
+    document.getElementById('repayment-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const month = document.getElementById('month').value;
       const amount = parseInt(document.getElementById('amount').value);
       const remaining = totalLoan - repayments.reduce((sum, e) => sum + e.amount, 0);
 
-      if (!month || isNaN(amount) || amount <= 0) {
-        alert("請輸入有效的月份與金額");
+      if (!month) {
+        alert('請選擇月份');
         return;
       }
-
+      if (isNaN(amount) || amount <= 0) {
+        alert('請輸入有效的還款金額');
+        return;
+      }
       if (amount > remaining) {
-        alert("還款金額不能大於剩餘金額！");
+        alert('還款金額不能大於剩餘金額！');
         return;
       }
 
       repayments.push({ month, amount });
       localStorage.setItem('repayments', JSON.stringify(repayments));
       updateTable();
-      this.reset();
+      e.target.reset();
+      generateMonthOptions(12); // 重新產生避免重複
     });
 
+    // 初始載入
+    generateMonthOptions(12);
     updateTable();
   </script>
 </body>
