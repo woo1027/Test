@@ -131,19 +131,29 @@
     const totalLoan = 240000;
     let repayments = JSON.parse(localStorage.getItem('repayments')) || [];
 
-    // 產生未來 n 個月的月份選項
-    function generateMonthOptions(n = 12) {
+    // 產生從 startYear-startMonth 到目前月份的選項
+    function generateMonthOptionsFromStartToNow(startYear, startMonth) {
       const select = document.getElementById('month');
-      const now = new Date();
       select.innerHTML = ''; // 清空舊選項
-      for (let i = 0; i < n; i++) {
-        const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
-        const year = date.getFullYear();
-        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+
+      const now = new Date();
+      const nowYear = now.getFullYear();
+      const nowMonth = now.getMonth() + 1;
+
+      let year = startYear;
+      let month = startMonth;
+
+      while (year < nowYear || (year === nowYear && month <= nowMonth)) {
         const option = document.createElement('option');
-        option.value = `${year}-${month}`;
-        option.textContent = `${year}-${month}`;
+        option.value = `${year}-${month.toString().padStart(2, '0')}`;
+        option.textContent = `${year}-${month.toString().padStart(2, '0')}`;
         select.appendChild(option);
+
+        month++;
+        if (month > 12) {
+          month = 1;
+          year++;
+        }
       }
     }
 
@@ -196,11 +206,10 @@
       localStorage.setItem('repayments', JSON.stringify(repayments));
       updateTable();
       e.target.reset();
-      generateMonthOptions(12); // 重新產生避免重複
     });
 
-    // 初始載入
-    generateMonthOptions(12);
+    // 頁面初始呼叫，從 2024-10 開始產生選項到當月
+    generateMonthOptionsFromStartToNow(2024, 10);
     updateTable();
   </script>
 </body>
