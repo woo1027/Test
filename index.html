@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>還款紀錄表</title>
+  <title>還款紀錄表 - Firebase 同步版</title>
   <style>
     :root {
       --bg: #f6f5f3;
@@ -98,6 +98,10 @@
       }
     }
   </style>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
   <div class="card">
@@ -128,13 +132,33 @@
   </div>
 
   <script>
-    const totalLoan = 240000;
-    let repayments = JSON.parse(localStorage.getItem('repayments')) || [];
+    // ====== Firebase 初始化 ======
+    const firebaseConfig = {
+      apiKey: "<YOUR_API_KEY>",
+      authDomain: "<YOUR_AUTH_DOMAIN>",
+      projectId: "<YOUR_PROJECT_ID>",
+      storageBucket: "<YOUR_STORAGE_BUCKET>",
+      messagingSenderId: "<YOUR_MESSAGING_SENDER_ID>",
+      appId: "<YOUR_APP_ID>"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
-    // 產生從 startYear-startMonth 到目前月份的選項
+    // ====== 使用者識別 ID（簡單版） ======
+    const userId = localStorage.getItem('userId') || (() => {
+      const id = 'user_' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('userId', id);
+      return id;
+    })();
+
+    // ====== 還款資料與總金額 ======
+    const totalLoan = 240000;
+    let repayments = [];
+
+    // ====== 產生月份選項，從 2024-10 到當月 ======
     function generateMonthOptionsFromStartToNow(startYear, startMonth) {
       const select = document.getElementById('month');
-      select.innerHTML = ''; // 清空舊選項
+      select.innerHTML = ''; // 清空
 
       const now = new Date();
       const nowYear = now.getFullYear();
@@ -157,6 +181,29 @@
       }
     }
 
+    // ====== 讀取 Firestore 還款資料 ======
+    async function loadRepayments() {
+      try {
+        const doc = await db.collection('repayments').doc(userId).get();
+        if (doc.exists) {
+          return doc.data().list || [];
+        }
+      } catch (error) {
+        console.error("讀取資料失敗:", error);
+      }
+      return [];
+    }
+
+    // ====== 儲存還款資料到 Firestore ======
+    async function saveRepayments(data) {
+      try {
+        await db.collection('repayments').doc(userId).set({ list: data });
+      } catch (error) {
+        console.error("儲存資料失敗:", error);
+      }
+    }
+
+    // ====== 更新表格和剩餘金額顯示 ======
     function updateTable() {
       const tbody = document.querySelector('#repayment-table tbody');
       tbody.innerHTML = '';
@@ -172,9 +219,9 @@
         const btnCell = row.insertCell(3);
         const delBtn = document.createElement('button');
         delBtn.textContent = '刪除';
-        delBtn.onclick = () => {
+        delBtn.onclick = async () => {
           repayments.splice(index, 1);
-          localStorage.setItem('repayments', JSON.stringify(repayments));
+          await saveRepayments(repayments);
           updateTable();
         };
         btnCell.appendChild(delBtn);
@@ -183,7 +230,15 @@
       document.getElementById('remaining').textContent = remaining.toLocaleString();
     }
 
-    document.getElementById('repayment-form').addEventListener('submit', (e) => {
+    // ====== 初始化 ======
+    async function init() {
+      generateMonthOptionsFromStartToNow(2024, 10);
+      repayments = await loadRepayments();
+      updateTable();
+    }
+
+    // ====== 表單事件 ======
+    document.getElementById('repayment-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const month = document.getElementById('month').value;
       const amount = parseInt(document.getElementById('amount').value);
@@ -203,14 +258,13 @@
       }
 
       repayments.push({ month, amount });
-      localStorage.setItem('repayments', JSON.stringify(repayments));
+      await saveRepayments(repayments);
       updateTable();
       e.target.reset();
     });
 
-    // 頁面初始呼叫，從 2024-10 開始產生選項到當月
-    generateMonthOptionsFromStartToNow(2024, 10);
-    updateTable();
+    // 頁面載入
+    init();
   </script>
 </body>
 </html>
