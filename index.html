@@ -2,7 +2,14 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <title>還款紀錄表 - Firebase 同步版</title>
+  <title>還款紀錄系統</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
   <style>
     :root {
       --bg: #f6f5f3;
@@ -21,7 +28,6 @@
     h1 {
       text-align: center;
       color: var(--primary);
-      margin-bottom: 20px;
     }
     .card {
       background: var(--card);
@@ -35,6 +41,20 @@
       font-size: 1.2em;
       color: var(--primary);
     }
+    #user-info {
+      text-align: right;
+      margin-bottom: 10px;
+    }
+    #login-btn {
+      float: right;
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 10px;
+    }
     form {
       margin-top: 20px;
       display: flex;
@@ -42,8 +62,7 @@
       gap: 10px;
       align-items: center;
     }
-    select,
-    input[type="number"] {
+    select, input[type="number"] {
       padding: 8px;
       border: 1px solid #ccc;
       border-radius: 8px;
@@ -59,9 +78,6 @@
       border-radius: 8px;
       cursor: pointer;
       transition: background-color 0.3s;
-    }
-    button:hover {
-      background-color: #8d928b;
     }
     table {
       width: 100%;
@@ -81,35 +97,22 @@
       background-color: var(--accent);
       color: #fff;
     }
-    tr:nth-child(even) {
-      background-color: #f9f9f9;
-    }
-    tr:hover {
-      background-color: #f1f1f1;
-    }
+    tr:nth-child(even) { background-color: #f9f9f9; }
+    tr:hover { background-color: #f1f1f1; }
+
     @media (max-width: 600px) {
-      form {
-        flex-direction: column;
-        align-items: stretch;
-      }
-      select,
-      input[type="number"] {
-        width: 100%;
-      }
+      form { flex-direction: column; align-items: stretch; }
+      select, input[type="number"] { width: 100%; }
     }
   </style>
-
-  <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-
 </head>
 <body>
   <div class="card">
     <h1>每月還款紀錄</h1>
-
+    <button id="login-btn">Google 登入</button>
+    <p id="user-info"></p>
     <p>總借款金額：<strong>240,000</strong> 元</p>
-    <p>剩餘金額：<strong id="remaining">240,000</strong> 元</p>
+    <p>剩餘金額：<strong id="remaining">0</strong> 元</p>
 
     <form id="repayment-form">
       <label for="month">月份：</label>
@@ -133,79 +136,59 @@
   </div>
 
   <script>
-    // ====== Firebase 初始化 ======
     const firebaseConfig = {
-        apiKey: "AIzaSyD42iA8QAXvHDJXi0oChcnbPX3XXpfwId8",
-        authDomain: "repayment-record.firebaseapp.com",
-        projectId: "repayment-record",
-        storageBucket: "repayment-record.firebasestorage.app",
-        messagingSenderId: "971284560235",
-        appId: "1:971284560235:web:eb0e2056377402d978342e",
-        measurementId: "G-ZQY2FDZ142"
+      apiKey: "AIzaSyD42iA8QAXvHDJXi0oChcnbPX3XXpfwId8",
+      authDomain: "repayment-record.firebaseapp.com",
+      projectId: "repayment-record",
     };
+
     firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
     const db = firebase.firestore();
 
-    // ====== 使用者識別 ID（簡單版） ======
-    const userId = localStorage.getItem('userId') || (() => {
-      const id = 'user_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('userId', id);
-      return id;
-    })();
-
-    // ====== 還款資料與總金額 ======
     const totalLoan = 240000;
+    let currentUserId = null;
     let repayments = [];
 
-    // ====== 產生月份選項，從 2024-10 到當月 ======
-    function generateMonthOptionsFromStartToNow(startYear, startMonth) {
+    document.getElementById("login-btn").addEventListener("click", async () => {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      try {
+        const result = await auth.signInWithPopup(provider);
+        const user = result.user;
+        currentUserId = user.uid;
+        document.getElementById("user-info").textContent = `已登入：${user.displayName}`;
+        init();
+      } catch (err) {
+        alert("登入失敗：" + err.message);
+        console.error(err);
+      }
+    });
+
+    function generateMonthOptionsFrom(startYear, startMonth) {
       const select = document.getElementById('month');
-      select.innerHTML = ''; // 清空
-
+      select.innerHTML = '';
       const now = new Date();
-      const nowYear = now.getFullYear();
-      const nowMonth = now.getMonth() + 1;
-
-      let year = startYear;
-      let month = startMonth;
-
-      while (year < nowYear || (year === nowYear && month <= nowMonth)) {
-        const option = document.createElement('option');
-        option.value = `${year}-${month.toString().padStart(2, '0')}`;
-        option.textContent = `${year}-${month.toString().padStart(2, '0')}`;
-        select.appendChild(option);
-
+      let year = startYear, month = startMonth;
+      while (year < now.getFullYear() || (year === now.getFullYear() && month <= now.getMonth() + 1)) {
+        const m = `${year}-${String(month).padStart(2, '0')}`;
+        const opt = document.createElement('option');
+        opt.value = opt.textContent = m;
+        select.appendChild(opt);
         month++;
-        if (month > 12) {
-          month = 1;
-          year++;
-        }
+        if (month > 12) { month = 1; year++; }
       }
     }
 
-    // ====== 讀取 Firestore 還款資料 ======
     async function loadRepayments() {
-      try {
-        const doc = await db.collection('repayments').doc(userId).get();
-        if (doc.exists) {
-          return doc.data().list || [];
-        }
-      } catch (error) {
-        console.error("讀取資料失敗:", error);
-      }
+      const doc = await db.collection("repayments").doc(currentUserId).get();
+      if (doc.exists) return doc.data().list || [];
       return [];
     }
 
-    // ====== 儲存還款資料到 Firestore ======
     async function saveRepayments(data) {
-      try {
-        await db.collection('repayments').doc(userId).set({ list: data });
-      } catch (error) {
-        console.error("儲存資料失敗:", error);
-      }
+      await db.collection("repayments").doc(currentUserId).set({ list: data });
     }
 
-    // ====== 更新表格和剩餘金額顯示 ======
     function updateTable() {
       const tbody = document.querySelector('#repayment-table tbody');
       tbody.innerHTML = '';
@@ -232,30 +215,21 @@
       document.getElementById('remaining').textContent = remaining.toLocaleString();
     }
 
-    // ====== 初始化 ======
     async function init() {
-      generateMonthOptionsFromStartToNow(2024, 10);
+      if (!currentUserId) return;
+      generateMonthOptionsFrom(2024, 10);
       repayments = await loadRepayments();
       updateTable();
     }
 
-    // ====== 表單事件 ======
     document.getElementById('repayment-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const month = document.getElementById('month').value;
       const amount = parseInt(document.getElementById('amount').value);
       const remaining = totalLoan - repayments.reduce((sum, e) => sum + e.amount, 0);
 
-      if (!month) {
-        alert('請選擇月份');
-        return;
-      }
-      if (isNaN(amount) || amount <= 0) {
-        alert('請輸入有效的還款金額');
-        return;
-      }
-      if (amount > remaining) {
-        alert('還款金額不能大於剩餘金額！');
+      if (!month || isNaN(amount) || amount <= 0 || amount > remaining) {
+        alert("請輸入正確的還款金額與月份");
         return;
       }
 
@@ -264,9 +238,6 @@
       updateTable();
       e.target.reset();
     });
-
-    // 頁面載入
-    init();
   </script>
 </body>
 </html>
