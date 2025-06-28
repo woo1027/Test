@@ -4,38 +4,137 @@
   <meta charset="UTF-8">
   <title>還款紀錄表</title>
   <style>
-    body { font-family: sans-serif; margin: 30px; }
-    table, th, td { border: 1px solid #ccc; border-collapse: collapse; padding: 8px; }
-    table { width: 100%; margin-top: 20px; }
-    input[type="number"], input[type="text"] { width: 120px; }
-    button { margin-left: 5px; }
+    :root {
+      --bg: #f6f5f3;
+      --card: #f2efec;
+      --primary: #a3a7a2;
+      --accent: #c9bcbc;
+      --text: #4a4a4a;
+    }
+
+    body {
+      font-family: "Noto Sans TC", sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 30px;
+    }
+
+    h1 {
+      text-align: center;
+      color: var(--primary);
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 20px;
+      max-width: 800px;
+      margin: auto;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+
+    p strong {
+      font-size: 1.2em;
+      color: var(--primary);
+    }
+
+    form {
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    input[type="number"],
+    input[type="text"] {
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 1em;
+    }
+
+    button {
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      font-size: 1em;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    button:hover {
+      background-color: #8d928b;
+    }
+
+    table {
+      width: 100%;
+      margin-top: 25px;
+      border-collapse: collapse;
+      background-color: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+
+    th, td {
+      border: 1px solid #ddd;
+      padding: 12px;
+      text-align: center;
+    }
+
+    th {
+      background-color: var(--accent);
+      color: #fff;
+    }
+
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+
+    tr:hover {
+      background-color: #f1f1f1;
+    }
+
+    @media (max-width: 600px) {
+      form {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
   </style>
 </head>
 <body>
-  <h1>每月還款紀錄</h1>
+  <div class="card">
+    <h1>每月還款紀錄</h1>
 
-  <p>總借款金額：<strong>240,000</strong> 元</p>
-  <p>剩餘金額：<strong id="remaining">160000</strong> 元</p>
+    <p>總借款金額：<strong>240,000</strong> 元</p>
+    <p>剩餘金額：<strong id="remaining">160000</strong> 元</p>
 
-  <form id="repayment-form">
-    <label for="month">月份：</label>
-    <input type="text" id="month" placeholder="2025-06" required>
-    <label for="amount">還款金額：</label>
-    <input type="number" id="amount" required>
-    <button type="submit">紀錄還款</button>
-  </form>
+    <form id="repayment-form">
+      <label for="month">月份：</label>
+      <input type="text" id="month" placeholder="2025-06" required>
+      <label for="amount">還款金額：</label>
+      <input type="number" id="amount" required>
+      <button type="submit">紀錄還款</button>
+    </form>
 
-  <table id="repayment-table">
-    <thead>
-      <tr>
-        <th>月份</th>
-        <th>還款金額</th>
-        <th>剩餘金額</th>
-        <th>操作</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+    <table id="repayment-table">
+      <thead>
+        <tr>
+          <th>月份</th>
+          <th>還款金額</th>
+          <th>剩餘金額</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
   <script>
     let totalLoan = 160000;
@@ -53,7 +152,6 @@
         remaining -= entry.amount;
         row.insertCell(2).textContent = remaining.toLocaleString();
 
-        // 刪除按鈕
         const delBtn = document.createElement('button');
         delBtn.textContent = "刪除";
         delBtn.onclick = () => {
@@ -61,15 +159,16 @@
           localStorage.setItem('repayments', JSON.stringify(repayments));
           updateTable();
         };
-        row.insertCell(3).appendChild(delBtn);
+        const btnCell = row.insertCell(3);
+        btnCell.appendChild(delBtn);
       });
 
-      document.getElementById('remaining').textContent = (totalLoan - repayments.reduce((sum, e) => sum + e.amount, 0)).toLocaleString();
+      document.getElementById('remaining').textContent =
+        (totalLoan - repayments.reduce((sum, e) => sum + e.amount, 0)).toLocaleString();
     }
 
     document.getElementById('repayment-form').addEventListener('submit', function (e) {
       e.preventDefault();
-
       const month = document.getElementById('month').value;
       const amount = parseInt(document.getElementById('amount').value);
       const remaining = totalLoan - repayments.reduce((sum, e) => sum + e.amount, 0);
@@ -90,7 +189,6 @@
       this.reset();
     });
 
-    // 初始載入
     updateTable();
   </script>
 </body>
