@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>還款紀錄表</title>
+  <style>
+    body { font-family: sans-serif; margin: 30px; }
+    table, th, td { border: 1px solid #ccc; border-collapse: collapse; padding: 8px; }
+    table { width: 100%; margin-top: 20px; }
+    input[type="number"], input[type="text"] { width: 120px; }
+    button { margin-left: 5px; }
+  </style>
+</head>
+<body>
+  <h1>每月還款紀錄</h1>
+
+  <p>總借款金額：<strong>160,000</strong> 元</p>
+  <p>剩餘金額：<strong id="remaining">160000</strong> 元</p>
+
+  <form id="repayment-form">
+    <label for="month">月份：</label>
+    <input type="text" id="month" placeholder="2025-06" required>
+    <label for="amount">還款金額：</label>
+    <input type="number" id="amount" required>
+    <button type="submit">紀錄還款</button>
+  </form>
+
+  <table id="repayment-table">
+    <thead>
+      <tr>
+        <th>月份</th>
+        <th>還款金額</th>
+        <th>剩餘金額</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    let totalLoan = 160000;
+    let repayments = JSON.parse(localStorage.getItem('repayments')) || [];
+
+    function updateTable() {
+      const table = document.querySelector('#repayment-table tbody');
+      table.innerHTML = "";
+      let remaining = totalLoan;
+
+      repayments.forEach((entry, index) => {
+        const row = table.insertRow();
+        row.insertCell(0).textContent = entry.month;
+        row.insertCell(1).textContent = entry.amount.toLocaleString();
+        remaining -= entry.amount;
+        row.insertCell(2).textContent = remaining.toLocaleString();
+
+        // 刪除按鈕
+        const delBtn = document.createElement('button');
+        delBtn.textContent = "刪除";
+        delBtn.onclick = () => {
+          repayments.splice(index, 1);
+          localStorage.setItem('repayments', JSON.stringify(repayments));
+          updateTable();
+        };
+        row.insertCell(3).appendChild(delBtn);
+      });
+
+      document.getElementById('remaining').textContent = (totalLoan - repayments.reduce((sum, e) => sum + e.amount, 0)).toLocaleString();
+    }
+
+    document.getElementById('repayment-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      const month = document.getElementById('month').value;
+      const amount = parseInt(document.getElementById('amount').value);
+      const remaining = totalLoan - repayments.reduce((sum, e) => sum + e.amount, 0);
+
+      if (!month || isNaN(amount) || amount <= 0) {
+        alert("請輸入有效的月份與金額");
+        return;
+      }
+
+      if (amount > remaining) {
+        alert("還款金額不能大於剩餘金額！");
+        return;
+      }
+
+      repayments.push({ month, amount });
+      localStorage.setItem('repayments', JSON.stringify(repayments));
+      updateTable();
+      this.reset();
+    });
+
+    // 初始載入
+    updateTable();
+  </script>
+</body>
+</html>
