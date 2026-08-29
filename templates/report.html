@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<title>月報表｜便當店營運管理系統</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">🍱 便當店營運管理</div>
+  <nav>
+    <a href="/">每日紀錄</a>
+    <a class="active" href="/report">月報表</a>
+    <a href="/settings">設定</a>
+  </nav>
+</header>
+
+<main class="container">
+  <section class="card">
+    <div class="field-row">
+      <label>選擇月份
+        <input type="month" id="report-month" value="{{ month }}" />
+      </label>
+      <button id="load-report-btn">查看報表</button>
+    </div>
+
+    <div class="summary-grid" id="summary-grid"></div>
+  </section>
+
+  <section class="card">
+    <h2>每日營收 / 成本走勢</h2>
+    <canvas id="daily-chart" height="90"></canvas>
+  </section>
+
+  <section class="card">
+    <h2>成本項目佔比（是否超過自訂目標）</h2>
+    <table class="data-table">
+      <thead>
+        <tr><th>項目</th><th>金額</th><th>佔營業額%</th><th>目標%</th><th>狀態</th></tr>
+      </thead>
+      <tbody id="cost-breakdown-list"></tbody>
+    </table>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>initReportPage();</script>
+</body>
+</html>

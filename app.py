@@ -1,323 +1,405 @@
-from flask import Flask, render_template, jsonify, request
-import json
-import pymssql
-import pandas as pd
-import matplotlib.pyplot as plt
+import os
+import sqlite3
+from datetime import date, datetime, timedelta
+
+from flask import Flask, g, jsonify, render_template, request
 
 app = Flask(__name__)
 
-# 資料庫連接設置
-def get_data_from_db():
-    dividend_query = """
-    SELECT
-        FORMAT(RecordMonth, 'yyyy-MM') AS 年月,
-        SUM(CASE WHEN StoreID = 1 THEN FLOOR(DividendAmount) ELSE 0 END) AS 伸港店,
-        SUM(CASE WHEN StoreID = 2 THEN FLOOR(DividendAmount) ELSE 0 END) AS 嶺東店,
-        SUM(CASE WHEN StoreID = 3 THEN FLOOR(DividendAmount) ELSE 0 END) AS 大甲店
-    FROM DividendRecords
-    GROUP BY FORMAT(RecordMonth, 'yyyy-MM')
-    ORDER BY 年月;
-    """
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bento.db")
 
-    initial_query = """
-    SELECT StoreID, FLOOR(InitialInvestment) FROM Stores WHERE StoreID IN (1, 2, 3)
-    """
+DEFAULT_CATEGORIES = [
+    ("食材", 35, 1),
+    ("人事", 25, 2),
+    ("租金", 12, 3),
+    ("包材/餐盒容器", 5, 4),
+    ("水電", 3, 5),
+    ("瓦斯", 2, 6),
+    ("電話費", 1, 7),
+    ("雜支", 3, 8),
+]
 
-    with pymssql.connect(
-        server='192.168.0.106',
-        user='sa',
-        password='wu469711',
-        database='invest'
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(dividend_query)
-            dividend_rows = cursor.fetchall()
 
-            cursor.execute(initial_query)
-            initial_rows = cursor.fetchall()
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA foreign_keys = ON")
+    return g.db
 
-    # 將 DividendRecords 轉成 DataFrame
-    df = pd.DataFrame(dividend_rows, columns=['年月', '伸港店', '嶺東店', '大甲店'])
 
-    # 建立初始投資字典 StoreID->金額
-    initial_dict = {row[0]: row[1] for row in initial_rows}
+@app.teardown_appcontext
+def close_db(exception=None):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
 
-    # 新增一列，年月欄為「初始投資」，三家店初始投資對應填入
-    initial_row_df = pd.DataFrame([{
-        '年月': '初始投資',
-        '伸港店': initial_dict.get(1, 0),
-        '嶺東店': initial_dict.get(2, 0),
-        '大甲店': initial_dict.get(3, 0),
-    }])
 
-    # 把初始投資列放在最前面
-    df = pd.concat([initial_row_df, df], ignore_index=True)
-
-    # 計算各店獲利累積和 (從第二列開始計算，因為第一列是初始投資)
-    cumsum_df = df.loc[1:, ['伸港店', '嶺東店', '大甲店']].cumsum()
-
-    # 剩餘金額 = 初始投資 - 獲利累積和
-    remaining = {}
-    for store in ['伸港店', '嶺東店', '大甲店']:
-        initial_value = initial_row_df[store].iloc[0]
-        last_cumsum = cumsum_df[store].iloc[-1] if not cumsum_df.empty else 0
-        remaining[store] = initial_value - last_cumsum
-
-    # 建立剩餘金額列
-    remaining_row_df = pd.DataFrame(
-        [{
-            '年月': '剩餘金額',
-            '伸港店': remaining['伸港店'],
-            '嶺東店': remaining['嶺東店'],
-            '大甲店': remaining['大甲店'],
-        }],
-        columns=['年月', '伸港店', '嶺東店', '大甲店']
+def init_db():
+    first_time = not os.path.exists(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            target_percent REAL NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS daily_sales (
+            date TEXT PRIMARY KEY,
+            revenue REAL NOT NULL DEFAULT 0
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cost_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            category_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            note TEXT DEFAULT '',
+            FOREIGN KEY (category_id) REFERENCES categories(id)
+        )
+        """
+    )
+    if first_time:
+        conn.executemany(
+            "INSERT INTO categories (name, target_percent, sort_order) VALUES (?, ?, ?)",
+            DEFAULT_CATEGORIES,
+        )
+    conn.commit()
+    conn.close()
 
-    # 把剩餘金額放在最後一列
-    df = pd.concat([df, remaining_row_df], ignore_index=True)
 
-    return df
+def month_bounds(month_str):
+    start = datetime.strptime(month_str, "%Y-%m").date()
+    if start.month == 12:
+        end = date(start.year + 1, 1, 1)
+    else:
+        end = date(start.year, start.month + 1, 1)
+    return start.isoformat(), end.isoformat()
 
 
+# ---------- Pages ----------
 
-@app.route('/api/profit/<int:store_id>')
-def api_profit(store_id):
-    query = """
-    SELECT 
-        FORMAT(RecordMonth, 'yyyy-MM') AS 年月,
-        SUM(FLOOR(DividendAmount)) AS 獲利金額
-    FROM DividendRecords
-    WHERE StoreID = %s
-    GROUP BY FORMAT(RecordMonth, 'yyyy-MM')
-    ORDER BY 年月;
-    """
+@app.route("/")
+def index():
+    return render_template("index.html", today=date.today().isoformat())
 
-    with pymssql.connect(
-        server='192.168.0.106',
-        user='sa',
-        password='wu469711',
-        database='invest'
-    ) as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(query, (store_id,))
-            rows = cursor.fetchall()
 
-    dates = [row[0] for row in rows]
-    profits = [row[1] for row in rows]
+@app.route("/report")
+def report_page():
+    return render_template("report.html", month=date.today().strftime("%Y-%m"))
 
-    return jsonify({'dates': dates, 'profits': profits})
 
-# 計算目前回本狀況
-@app.route('/api/all_stores_balance')
-def all_stores_balance():
-    # 各店初始金額設定
-    initial_investments = {
-        1: 80000,  # 伸港店
-        2: 80000,  # 嶺東店
-        3: 50000   # 大甲店
-    }
+@app.route("/settings")
+def settings_page():
+    return render_template("settings.html")
 
-    query = """
-        SELECT StoreID, FORMAT(RecordMonth, 'yyyy-MM') AS month, FLOOR(DividendAmount) AS profit
-        FROM DividendRecords
-        WHERE StoreID IN (1,2,3)
-        ORDER BY StoreID, RecordMonth ASC
-    """
 
-    with pymssql.connect(server='192.168.0.106', user='sa', password='wu469711', database='invest') as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(query)
-            rows = cursor.fetchall()
+# ---------- API: categories ----------
 
-    # 用 StoreID 分組資料
-    store_data = {1: [], 2: [], 3: []}
-    for store_id, month, profit in rows:
-        store_data[store_id].append((month, profit))
+@app.route("/api/categories", methods=["GET"])
+def list_categories():
+    db = get_db()
+    only_active = request.args.get("active", "1") == "1"
+    query = "SELECT * FROM categories"
+    if only_active:
+        query += " WHERE is_active = 1"
+    query += " ORDER BY sort_order, id"
+    rows = db.execute(query).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/categories", methods=["POST"])
+def create_category():
+    data = request.get_json(force=True) or {}
+    name = (data.get("name") or "").strip()
+    target_percent = data.get("target_percent", 0)
+    if not name:
+        return jsonify({"error": "項目名稱為必填"}), 400
+    try:
+        target_percent = float(target_percent)
+    except (TypeError, ValueError):
+        return jsonify({"error": "目標佔比必須為數字"}), 400
+
+    db = get_db()
+    max_order = db.execute("SELECT COALESCE(MAX(sort_order), 0) AS m FROM categories").fetchone()["m"]
+    try:
+        cur = db.execute(
+            "INSERT INTO categories (name, target_percent, sort_order) VALUES (?, ?, ?)",
+            (name, target_percent, max_order + 1),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "此項目名稱已存在"}), 400
+    return jsonify({"id": cur.lastrowid, "name": name, "target_percent": target_percent})
+
+
+@app.route("/api/categories/<int:cat_id>", methods=["PUT"])
+def update_category(cat_id):
+    data = request.get_json(force=True) or {}
+    db = get_db()
+    row = db.execute("SELECT * FROM categories WHERE id = ?", (cat_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "找不到此項目"}), 404
+
+    name = data.get("name", row["name"]).strip()
+    target_percent = data.get("target_percent", row["target_percent"])
+    is_active = data.get("is_active", row["is_active"])
+    try:
+        target_percent = float(target_percent)
+    except (TypeError, ValueError):
+        return jsonify({"error": "目標佔比必須為數字"}), 400
+
+    try:
+        db.execute(
+            "UPDATE categories SET name = ?, target_percent = ?, is_active = ? WHERE id = ?",
+            (name, target_percent, 1 if is_active else 0, cat_id),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "此項目名稱已存在"}), 400
+    return jsonify({"message": "更新成功"})
+
+
+@app.route("/api/categories/<int:cat_id>", methods=["DELETE"])
+def delete_category(cat_id):
+    db = get_db()
+    used = db.execute(
+        "SELECT COUNT(*) AS c FROM cost_records WHERE category_id = ?", (cat_id,)
+    ).fetchone()["c"]
+    if used > 0:
+        db.execute("UPDATE categories SET is_active = 0 WHERE id = ?", (cat_id,))
+        db.commit()
+        return jsonify({"message": "此項目已有歷史紀錄，已改為停用而非刪除"})
+    db.execute("DELETE FROM categories WHERE id = ?", (cat_id,))
+    db.commit()
+    return jsonify({"message": "刪除成功"})
+
+
+# ---------- API: daily sales ----------
+
+@app.route("/api/sales", methods=["GET"])
+def get_sales():
+    d = request.args.get("date")
+    if not d:
+        return jsonify({"error": "date 為必填"}), 400
+    db = get_db()
+    row = db.execute("SELECT * FROM daily_sales WHERE date = ?", (d,)).fetchone()
+    return jsonify({"date": d, "revenue": row["revenue"] if row else 0})
+
+
+@app.route("/api/sales", methods=["POST"])
+def upsert_sales():
+    data = request.get_json(force=True) or {}
+    d = data.get("date")
+    revenue = data.get("revenue")
+    if not d or revenue is None:
+        return jsonify({"error": "date 和 revenue 為必填"}), 400
+    try:
+        revenue = float(revenue)
+    except (TypeError, ValueError):
+        return jsonify({"error": "營業額必須為數字"}), 400
+
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO daily_sales (date, revenue) VALUES (?, ?)
+        ON CONFLICT(date) DO UPDATE SET revenue = excluded.revenue
+        """,
+        (d, revenue),
+    )
+    db.commit()
+    return jsonify({"message": "已儲存", "date": d, "revenue": revenue})
+
+
+# ---------- API: cost records ----------
+
+@app.route("/api/costs", methods=["GET"])
+def list_costs():
+    d = request.args.get("date")
+    db = get_db()
+    if d:
+        rows = db.execute(
+            """
+            SELECT cr.id, cr.date, cr.amount, cr.note, c.id AS category_id, c.name AS category_name
+            FROM cost_records cr JOIN categories c ON c.id = cr.category_id
+            WHERE cr.date = ?
+            ORDER BY cr.id DESC
+            """,
+            (d,),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            """
+            SELECT cr.id, cr.date, cr.amount, cr.note, c.id AS category_id, c.name AS category_name
+            FROM cost_records cr JOIN categories c ON c.id = cr.category_id
+            ORDER BY cr.date DESC, cr.id DESC
+            LIMIT 100
+            """
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/costs", methods=["POST"])
+def add_cost():
+    data = request.get_json(force=True) or {}
+    d = data.get("date")
+    category_id = data.get("category_id")
+    amount = data.get("amount")
+    note = (data.get("note") or "").strip()
+
+    if not d or not category_id or amount is None:
+        return jsonify({"error": "date、category_id、amount 為必填"}), 400
+    try:
+        amount = float(amount)
+    except (TypeError, ValueError):
+        return jsonify({"error": "金額必須為數字"}), 400
+
+    db = get_db()
+    cat = db.execute("SELECT id FROM categories WHERE id = ?", (category_id,)).fetchone()
+    if not cat:
+        return jsonify({"error": "找不到此成本項目"}), 400
+
+    cur = db.execute(
+        "INSERT INTO cost_records (date, category_id, amount, note) VALUES (?, ?, ?, ?)",
+        (d, category_id, amount, note),
+    )
+    db.commit()
+    return jsonify({"id": cur.lastrowid, "message": "新增成功"})
+
+
+@app.route("/api/costs/<int:cost_id>", methods=["DELETE"])
+def delete_cost(cost_id):
+    db = get_db()
+    db.execute("DELETE FROM cost_records WHERE id = ?", (cost_id,))
+    db.commit()
+    return jsonify({"message": "刪除成功"})
+
+
+# ---------- API: dashboard / reports ----------
+
+@app.route("/api/recent", methods=["GET"])
+def recent_summary():
+    days = int(request.args.get("days", 14))
+    db = get_db()
+    end = date.today()
+    start = end - timedelta(days=days - 1)
+
+    sales_rows = db.execute(
+        "SELECT date, revenue FROM daily_sales WHERE date BETWEEN ? AND ?",
+        (start.isoformat(), end.isoformat()),
+    ).fetchall()
+    revenue_by_date = {r["date"]: r["revenue"] for r in sales_rows}
+
+    cost_rows = db.execute(
+        "SELECT date, SUM(amount) AS total FROM cost_records WHERE date BETWEEN ? AND ? GROUP BY date",
+        (start.isoformat(), end.isoformat()),
+    ).fetchall()
+    cost_by_date = {r["date"]: r["total"] for r in cost_rows}
 
     result = []
-
-    # 店名對照
-    store_names = {1: "伸港店", 2: "嶺東店", 3: "大甲店"}
-
-    # 組合輸出
-    for store_id, records in store_data.items():
-        initial = initial_investments.get(store_id, 0)
-        total_profit = 0
-
-        store_result = []
-        store_result.append({"label": f"{store_names[store_id]}初始金額", "value": initial})
-
-        for month, profit in records:
-            store_result.append({"label": month, "value": profit})
-            total_profit += profit
-
-        remaining = initial - total_profit
-        store_result.append({"label": "剩餘金額", "value": remaining})
-
-        result.append({
-            "store_id": store_id,
-            "store_name": store_names[store_id],
-            "data": store_result
-        })
-
+    for i in range(days):
+        d = (start + timedelta(days=i)).isoformat()
+        revenue = revenue_by_date.get(d, 0) or 0
+        cost = cost_by_date.get(d, 0) or 0
+        result.append({"date": d, "revenue": revenue, "cost": cost, "profit": revenue - cost})
+    result.reverse()
     return jsonify(result)
 
 
+@app.route("/api/report/monthly", methods=["GET"])
+def monthly_report():
+    month = request.args.get("month")
+    if not month:
+        return jsonify({"error": "month 為必填 (格式 YYYY-MM)"}), 400
+    try:
+        start, end = month_bounds(month)
+    except ValueError:
+        return jsonify({"error": "month 格式錯誤，需為 YYYY-MM"}), 400
 
-def get_latest_month():
-    query = """
-    SELECT TOP 1 FORMAT(RecordMonth, 'yyyy-MM') 
-    FROM DividendRecords ORDER BY RecordMonth DESC"""
-    with pymssql.connect(server='192.168.0.106', user='sa', password='wu469711', database='invest') as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(query)
-            row = cursor.fetchone()
-            return row[0] if row else None
+    db = get_db()
 
-# 新增
-@app.route('/api/profit/add', methods=['POST'])
-def add_profit():
-    data = request.json
-    store_id = data.get('store_id')
-    profit = data.get('profit')
+    revenue = db.execute(
+        "SELECT COALESCE(SUM(revenue), 0) AS total FROM daily_sales WHERE date >= ? AND date < ?",
+        (start, end),
+    ).fetchone()["total"]
 
-    if not store_id or profit is None:
-        return jsonify({'error': 'store_id 和 profit 是必填欄位'}), 400
+    categories = db.execute(
+        "SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order, id"
+    ).fetchall()
 
-    latest_month = get_latest_month()
-    if not latest_month:
-        return jsonify({'error': '找不到最新月份資料'}), 400
+    cost_totals = db.execute(
+        """
+        SELECT category_id, SUM(amount) AS total
+        FROM cost_records
+        WHERE date >= ? AND date < ?
+        GROUP BY category_id
+        """,
+        (start, end),
+    ).fetchall()
+    cost_by_category = {r["category_id"]: r["total"] for r in cost_totals}
 
-    from datetime import datetime
-    record_month = datetime.strptime(latest_month + '-01', '%Y-%m-%d').date()
+    cost_breakdown = []
+    total_cost = 0
+    for c in categories:
+        amount = cost_by_category.get(c["id"], 0) or 0
+        total_cost += amount
+        percent = (amount / revenue * 100) if revenue > 0 else 0
+        cost_breakdown.append(
+            {
+                "category_id": c["id"],
+                "name": c["name"],
+                "amount": amount,
+                "percent": round(percent, 2),
+                "target_percent": c["target_percent"],
+                "exceeded": percent > c["target_percent"],
+            }
+        )
 
-    insert_query = """
-    INSERT INTO DividendRecords (StoreID, RecordMonth, DividendAmount)
-    VALUES (%s, %s, %s)
-    """
+    profit = revenue - total_cost
+    profit_margin = (profit / revenue * 100) if revenue > 0 else 0
 
-    with pymssql.connect(server='192.168.0.106', user='sa', password='wu469711', database='invest') as conn:
-        with conn.cursor() as cursor:
-            # 檢查資料是否已存在
-            cursor.execute("""
-                SELECT COUNT(*) FROM DividendRecords 
-                WHERE StoreID = %s AND FORMAT(RecordMonth, 'yyyy-MM') = %s
-            """, (store_id, latest_month))
-            exists = cursor.fetchone()[0] > 0
-
-            if exists:
-                return jsonify({'error': '該店鋪最新月份資料已存在，無法新增'}), 400
-
-            cursor.execute(insert_query, (store_id, record_month, profit))
-        conn.commit()
-
-    return jsonify({'message': '新增成功'})
-
-
-# 更新
-@app.route('/api/profit/update', methods=['POST'])
-def update_profit():
-    data = request.json
-    store_id = data.get('store_id')
-    profit = data.get('profit')
-
-    if not store_id or profit is None:
-        return jsonify({'error': 'store_id 和 profit 是必填欄位'}), 400
-
-    latest_month = get_latest_month()
-    if not latest_month:
-        return jsonify({'error': '找不到最新月份資料'}), 400
-
-    update_query = """
-    UPDATE DividendRecords
-    SET DividendAmount = %s
-    WHERE StoreID = %s AND FORMAT(RecordMonth, 'yyyy-MM') = %s
-    """
-
-    with pymssql.connect(server='192.168.0.106', user='sa', password='wu469711', database='invest') as conn:
-        with conn.cursor() as cursor:
-            # 確認該資料存在
-            cursor.execute("""
-                SELECT COUNT(*) FROM DividendRecords 
-                WHERE StoreID = %s AND FORMAT(RecordMonth, 'yyyy-MM') = %s
-            """, (store_id, latest_month))
-            exists = cursor.fetchone()[0] > 0
-
-            if not exists:
-                return jsonify({'error': '該店鋪最新月份資料不存在，無法更新'}), 400
-
-            cursor.execute(update_query, (profit, store_id, latest_month))
-        conn.commit()
-
-    return jsonify({'message': '更新成功'})
-
-
-# 刪除
-@app.route('/api/profit/delete', methods=['POST'])
-def delete_profit():
-    data = request.json
-    store_id = data.get('store_id')
-
-    if not store_id:
-        return jsonify({'error': 'store_id 是必填欄位'}), 400
-
-    latest_month = get_latest_month()
-    if not latest_month:
-        return jsonify({'error': '找不到最新月份資料'}), 400
-
-    delete_query = """
-    DELETE FROM DividendRecords
-    WHERE StoreID = %s AND FORMAT(RecordMonth, 'yyyy-MM') = %s
-    """
-
-    with pymssql.connect(server='192.168.0.106', user='sa', password='wu469711', database='invest') as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(delete_query, (store_id, latest_month))
-        conn.commit()
-
-    return jsonify({'message': '刪除成功'})
-
-# 頁面路由設置
-@app.route('/')
-def index():
-    # 獲取資料庫中的數據
-    data = get_data_from_db()
-    store_data = [
-        {'id': 1, 'name': '伸港店'},
-        {'id': 2, 'name': '嶺東店'},
-        {'id': 3, 'name': '大甲店'}
+    daily_rows = db.execute(
+        "SELECT date, revenue FROM daily_sales WHERE date >= ? AND date < ? ORDER BY date",
+        (start, end),
+    ).fetchall()
+    daily_cost_rows = db.execute(
+        "SELECT date, SUM(amount) AS total FROM cost_records WHERE date >= ? AND date < ? GROUP BY date",
+        (start, end),
+    ).fetchall()
+    daily_cost_map = {r["date"]: r["total"] for r in daily_cost_rows}
+    daily = [
+        {
+            "date": r["date"],
+            "revenue": r["revenue"],
+            "cost": daily_cost_map.get(r["date"], 0) or 0,
+        }
+        for r in daily_rows
     ]
 
-    # 將資料傳遞到 HTML 模板
-    return render_template('index.html', data=data, stores = store_data)
+    return jsonify(
+        {
+            "month": month,
+            "revenue": revenue,
+            "total_cost": total_cost,
+            "profit": profit,
+            "profit_margin": round(profit_margin, 2),
+            "cost_breakdown": cost_breakdown,
+            "daily": daily,
+        }
+    )
 
 
-@app.route('/chart')
-def chart():
-    return render_template('chart.html')
+init_db()
 
-@app.route('/edit-profit')
-def edit_profit():
-    return render_template('edit_profit.html')
-
-@app.route('/api/profit/latest/<int:store_id>')
-def get_latest_profit(store_id):
-    query = """
-    SELECT TOP 1 FLOOR(DividendAmount) AS 獲利金額
-    FROM DividendRecords
-    WHERE StoreID = %s
-    ORDER BY RecordMonth DESC
-    """
-    with pymssql.connect(server='192.168.0.106', user='sa', password='wu469711', database='invest') as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(query, (store_id,))
-            row = cursor.fetchone()
-            profit = row[0] if row else None
-    return jsonify({'profit': profit})
-
-
-# app.py
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
-
+    app.run(host="0.0.0.0", port=5000, debug=True)

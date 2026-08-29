@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<title>設定｜便當店營運管理系統</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">🍱 便當店營運管理</div>
+  <nav>
+    <a href="/">每日紀錄</a>
+    <a href="/report">月報表</a>
+    <a class="active" href="/settings">設定</a>
+  </nav>
+</header>
+
+<main class="container">
+  <section class="card">
+    <h2>成本項目與目標佔比</h2>
+    <p class="hint">目標佔比＝該項目金額佔當月營業額的比例上限。月報表會用這個數字判斷該項目是否「超標」。</p>
+    <table class="data-table">
+      <thead>
+        <tr><th>項目名稱</th><th>目標佔比 %</th><th>狀態</th><th></th></tr>
+      </thead>
+      <tbody id="category-list"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>新增成本項目</h2>
+    <div class="field-row">
+      <label>項目名稱
+        <input type="text" id="new-cat-name" placeholder="例如：保險費" />
+      </label>
+      <label>目標佔比 %
+        <input type="number" id="new-cat-target" min="0" step="0.1" placeholder="0" />
+      </label>
+      <button id="add-cat-btn">新增</button>
+    </div>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>initSettingsPage();</script>
+</body>
+</html>
