@@ -8,16 +8,39 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bento.db")
 
+# 食材成本細項（取代單一的「食材」，對照店裡的成本表分類）
+# (name, target_percent) -- 佔比抓自113年11月成本表，部分項目手寫不易辨識，先設為 0，請至設定頁確認/修正
+FOOD_SUBCATEGORIES = [
+    ("肉", 18.77),
+    ("包材(食材)", 3.99),
+    ("雜貨", 5.33),
+    ("青菜", 4.08),
+    ("蛋", 0),
+    ("珍珠香腸", 2.53),
+    ("主餐配菜", 3.39),
+    ("套餐配菜", 0.20),
+    ("湯品配菜", 0),
+    ("泡菜", 0),
+    ("醬汁", 2.68),
+    ("冷飲", 0),
+]
+
+# (name, target_percent, is_payroll_category)
+OTHER_CATEGORIES = [
+    ("人事", 25, 1),
+    ("租金", 12, 0),
+    ("包材/餐盒容器", 5, 0),
+    ("水電", 3, 0),
+    ("瓦斯", 2, 0),
+    ("電話費", 1, 0),
+    ("雜支", 3, 0),
+]
+
 DEFAULT_CATEGORIES = [
-    # (name, target_percent, sort_order, is_payroll_category)
-    ("食材", 35, 1, 0),
-    ("人事", 25, 2, 1),
-    ("租金", 12, 3, 0),
-    ("包材/餐盒容器", 5, 4, 0),
-    ("水電", 3, 5, 0),
-    ("瓦斯", 2, 6, 0),
-    ("電話費", 1, 7, 0),
-    ("雜支", 3, 8, 0),
+    (name, target, i + 1, 0) for i, (name, target) in enumerate(FOOD_SUBCATEGORIES)
+] + [
+    (name, target, len(FOOD_SUBCATEGORIES) + i + 1, is_payroll)
+    for i, (name, target, is_payroll) in enumerate(OTHER_CATEGORIES)
 ]
 
 DEFAULT_EMPLOYEES = [
@@ -52,6 +75,30 @@ def _ensure_column(conn, table, column, decl):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
+def _migrate_food_subcategories(conn):
+    """Split the old generic 食材 category into the shop's detailed food sub-categories."""
+    old_food = conn.execute("SELECT id FROM categories WHERE name = '食材'").fetchone()
+    if old_food:
+        old_id = old_food[0]
+        used = conn.execute(
+            "SELECT COUNT(*) FROM cost_records WHERE category_id = ?", (old_id,)
+        ).fetchone()[0]
+        if used > 0:
+            conn.execute("UPDATE categories SET is_active = 0 WHERE id = ?", (old_id,))
+        else:
+            conn.execute("DELETE FROM categories WHERE id = ?", (old_id,))
+
+    existing_names = {row[0] for row in conn.execute("SELECT name FROM categories")}
+    next_order = conn.execute("SELECT COALESCE(MAX(sort_order), 0) AS m FROM categories").fetchone()[0] + 1
+    for name, target in FOOD_SUBCATEGORIES:
+        if name not in existing_names:
+            conn.execute(
+                "INSERT INTO categories (name, target_percent, sort_order, is_payroll_category) VALUES (?, ?, ?, 0)",
+                (name, target, next_order),
+            )
+            next_order += 1
+
+
 def init_db():
     first_time = not os.path.exists(DB_PATH)
     conn = sqlite3.connect(DB_PATH)
@@ -67,6 +114,7 @@ def init_db():
         """
     )
     _ensure_column(conn, "categories", "is_payroll_category", "INTEGER NOT NULL DEFAULT 0")
+    conn.execute("UPDATE categories SET is_payroll_category = 1 WHERE name = '人事' AND is_payroll_category = 0")
 
     conn.execute(
         """
@@ -121,6 +169,8 @@ def init_db():
             "INSERT INTO employees (name, employee_type, monthly_salary, hourly_rate) VALUES (?, ?, ?, ?)",
             DEFAULT_EMPLOYEES,
         )
+    else:
+        _migrate_food_subcategories(conn)
     conn.commit()
     conn.close()
 
@@ -529,7 +579,13 @@ def monthly_report():
     ).fetchone()["total"]
 
     categories = db.execute(
-        "SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order, id"
+        """
+        SELECT * FROM categories
+        WHERE is_active = 1
+           OR id IN (SELECT DISTINCT category_id FROM cost_records WHERE date >= ? AND date < ?)
+        ORDER BY sort_order, id
+        """,
+        (start, end),
     ).fetchall()
 
     cost_totals = db.execute(
