@@ -37,9 +37,10 @@ DEFAULT_EMPLOYEES = [
 
 # 食材單價：先放 0 佔位，等實際單價確認後再到「標準成本」頁面填入
 # 單價由進貨單換算：豬肉片 540/3000g、洋蔥 320/10000g、高麗菜 700/20000g、
-# 泡菜 95/斤(以台斤600g換算)、豬絞肉 600/400g、白飯(米) 1300/30000g、
-# 蛋 800/180顆、珍珠香腸 610/(6包x150顆... 一包150顆)、百頁豆腐 3060/(6包x75片)、
-# 雞腿 685/25片、豬排 640/25片、排骨 610/20片、雞排 640/20片
+# 泡菜 360/3000g、豬絞肉 600/400g、白飯(米) 1300/30000g、
+# 蛋 800/180顆、珍珠香腸 610/(6包x150顆... 一包150顆)、百頁豆腐 1150/(6包x75片)、
+# 雞腿 685/25片、豬排 520/25片、排骨 610/20片、雞排 640/20片
+# 牛肉片單價待確認，先以 0 佔位
 DEFAULT_INGREDIENTS = [
     # (name, unit, unit_cost)
     ("洋蔥", "克", 0.032),
@@ -48,13 +49,14 @@ DEFAULT_INGREDIENTS = [
     ("蛋", "顆", 4.44),
     ("珍珠香腸", "顆", 4.07),
     ("高麗菜", "克", 0.035),
-    ("百頁豆腐", "片", 6.8),
-    ("泡菜", "克", 0.16),
+    ("百頁豆腐", "片", 2.56),
+    ("泡菜", "克", 0.12),
     ("豬絞肉", "克", 1.5),
     ("雞腿", "片", 27.4),
-    ("豬排", "片", 25.6),
+    ("豬排", "片", 20.8),
     ("排骨", "片", 30.5),
     ("雞排", "片", 32),
+    ("牛肉片", "克", 0),
 ]
 
 # 8 個便當品項與各自的配方（食材名稱, 用量）；醬汁/水/油等低金額隱形成本先不計入
@@ -64,7 +66,7 @@ DEFAULT_BENTO_ITEMS = [
     ("打拋豬肉便當", [("豬絞肉", 80), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
     ("照燒雞腿便當", [("雞腿", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
     ("黃金豬排便當", [("豬排", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
-    ("和風牛肉便當", [("洋蔥", 60), ("豬肉片", 80), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
+    ("和風牛肉便當", [("洋蔥", 60), ("牛肉片", 80), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
     ("厚燒排骨便當", [("排骨", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
     ("蜜汁雞排便當", [("雞排", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
 ]
@@ -135,9 +137,42 @@ def _migrate_ingredient_prices(conn):
     """把換算好的食材單價回填進去；只補還是 0（沒被使用者自己改過）的項目，不覆蓋手動設定值。"""
     for name, unit, unit_cost in DEFAULT_INGREDIENTS:
         conn.execute(
+            "INSERT OR IGNORE INTO ingredients (name, unit, unit_cost) VALUES (?, ?, ?)",
+            (name, unit, unit_cost),
+        )
+        conn.execute(
             "UPDATE ingredients SET unit_cost = ? WHERE name = ? AND unit_cost = 0",
             (unit_cost, name),
         )
+    # 這幾項單價曾經算錯過，這裡修正成正確值；只在還是上一版算出來的舊值時才覆蓋，
+    # 避免蓋掉使用者後來自己手動調整過的單價
+    for name, old_value, new_value in [
+        ("泡菜", 0.16, 0.12),
+        ("百頁豆腐", 6.8, 2.56),
+        ("豬排", 25.6, 20.8),
+    ]:
+        conn.execute(
+            "UPDATE ingredients SET unit_cost = ? WHERE name = ? AND unit_cost = ?",
+            (new_value, name, old_value),
+        )
+
+
+def _migrate_beef_bento(conn):
+    """和風牛肉便當原本誤用「豬肉片」，改成正確的「牛肉片」。"""
+    beef_row = conn.execute("SELECT id FROM ingredients WHERE name = '牛肉片'").fetchone()
+    if not beef_row:
+        return
+    beef_id = beef_row[0]
+
+    conn.execute(
+        """
+        UPDATE bento_recipe
+        SET ingredient_id = ?
+        WHERE ingredient_id = (SELECT id FROM ingredients WHERE name = '豬肉片')
+          AND bento_item_id = (SELECT id FROM bento_items WHERE name = '和風牛肉便當')
+        """,
+        (beef_id,),
+    )
 
 
 def init_db():
@@ -280,6 +315,7 @@ def init_db():
     _migrate_consolidate_food_categories(conn)
     _migrate_daily_computable(conn)
     _migrate_ingredient_prices(conn)
+    _migrate_beef_bento(conn)
     conn.commit()
     conn.close()
 
