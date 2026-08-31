@@ -495,6 +495,12 @@ function initSettingsPage() {
             </select>
           </td>
           <td><input type="number" class="cat-fixed-amount" value="${c.fixed_monthly_amount}" min="0" step="1" style="min-width:90px" ${c.is_active ? "" : "disabled"} /></td>
+          <td>
+            <label style="display:flex; align-items:center; gap:4px; font-size:0.85em; color:var(--muted);">
+              <input type="checkbox" class="cat-bimonthly" ${c.bimonthly_odd_months ? "checked" : ""} ${c.is_active ? "" : "disabled"} />
+              只在奇數月
+            </label>
+          </td>
           <td>${c.is_active ? '<span class="badge badge-ok">啟用中</span>' : '<span class="badge badge-warn">已停用</span>'}</td>
           <td>
             <button class="link-btn save-btn">儲存</button>
@@ -513,6 +519,7 @@ function initSettingsPage() {
             target_percent: tr.querySelector(".cat-target").value,
             daily_computable: tr.querySelector(".cat-daily").value === "1",
             fixed_monthly_amount: tr.querySelector(".cat-fixed-amount").value,
+            bimonthly_odd_months: tr.querySelector(".cat-bimonthly").checked,
           });
           loadCategories();
         } catch (e) {

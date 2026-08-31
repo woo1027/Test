@@ -14,16 +14,16 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bento.db")
 # 其餘項目是月結帳單（水電、瓦斯、電話費、包材、雜支）或只有每2、3天一筆的進貨（食材），
 # 沒辦法準確攤算到單日，daily_computable=0，日檢視時不計入、僅供參考。
 DEFAULT_CATEGORIES = [
-    # (name, target_percent, sort_order, is_payroll_category, daily_computable, fixed_monthly_amount)
-    ("食材", 42, 1, 0, 0, 0),
-    ("人事", 25, 2, 1, 1, 0),
-    ("租金", 12, 3, 0, 1, 38000),
-    ("包材/餐盒容器", 5, 4, 0, 0, 0),
-    ("電費", 3, 5, 0, 1, 15000),
-    ("水費", 0.5, 6, 0, 1, 800),  # 實際每2個月繳1600（奇數月），這裡取每月平均值
-    ("瓦斯", 2, 7, 0, 1, 15000),
-    ("電話費", 1, 8, 0, 1, 1300),
-    ("雜支", 3, 9, 0, 0, 0),
+    # (name, target_percent, sort_order, is_payroll_category, daily_computable, fixed_monthly_amount, bimonthly_odd_months)
+    ("食材", 42, 1, 0, 0, 0, 0),
+    ("人事", 25, 2, 1, 1, 0, 0),
+    ("租金", 12, 3, 0, 1, 38000, 0),
+    ("包材/餐盒容器", 5, 4, 0, 0, 0, 0),
+    ("電費", 3, 5, 0, 1, 15000, 0),
+    ("水費", 0.5, 6, 0, 1, 1600, 1),  # 只在奇數月(1,3,5,7,9,11)繳，偶數月是0
+    ("瓦斯", 2, 7, 0, 1, 15000, 0),
+    ("電話費", 1, 8, 0, 1, 1300, 0),
+    ("雜支", 3, 9, 0, 0, 0, 0),
 ]
 
 DEFAULT_INCOME_CATEGORIES = [
@@ -175,7 +175,6 @@ def _migrate_fixed_monthly_amounts(conn):
     for name, amount in [
         ("租金", 38000),
         ("電費", 15000),
-        ("水費", 800),  # 實際每2個月繳1600（奇數月），取每月平均值
         ("瓦斯", 15000),
         ("電話費", 1300),
     ]:
@@ -183,6 +182,12 @@ def _migrate_fixed_monthly_amounts(conn):
             "UPDATE categories SET fixed_monthly_amount = ? WHERE name = ? AND fixed_monthly_amount = 0",
             (amount, name),
         )
+    # 水費是雙月繳（奇數月1600、偶數月0），不是每月固定金額；
+    # 曾經誤設成每月平均800，這裡修正回正確的雙月金額與旗標
+    conn.execute(
+        "UPDATE categories SET fixed_monthly_amount = 1600, bimonthly_odd_months = 1 "
+        "WHERE name = '水費' AND fixed_monthly_amount IN (0, 800) AND bimonthly_odd_months = 0"
+    )
 
 
 def _migrate_ingredient_prices(conn):
@@ -317,6 +322,7 @@ def init_db():
     _ensure_column(conn, "categories", "is_food_group", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "categories", "daily_computable", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "categories", "fixed_monthly_amount", "REAL NOT NULL DEFAULT 0")
+    _ensure_column(conn, "categories", "bimonthly_odd_months", "INTEGER NOT NULL DEFAULT 0")
 
     conn.execute(
         """
@@ -441,7 +447,11 @@ def init_db():
     )
     if first_time:
         conn.executemany(
-            "INSERT INTO categories (name, target_percent, sort_order, is_payroll_category, daily_computable, fixed_monthly_amount) VALUES (?, ?, ?, ?, ?, ?)",
+            """
+            INSERT INTO categories
+                (name, target_percent, sort_order, is_payroll_category, daily_computable, fixed_monthly_amount, bimonthly_odd_months)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
             DEFAULT_CATEGORIES,
         )
         conn.executemany(
@@ -488,6 +498,13 @@ def month_bounds(month_str):
     else:
         end = date(start.year, start.month + 1, 1)
     return start.isoformat(), end.isoformat()
+
+
+def fixed_amount_for_month(category_row, month_num):
+    """固定金額項目在該月份實際要計入的金額；雙月繳費的項目偶數月是0。"""
+    if category_row["bimonthly_odd_months"] and month_num % 2 == 0:
+        return 0
+    return category_row["fixed_monthly_amount"]
 
 
 # ---------- Pages ----------
@@ -574,6 +591,7 @@ def update_category(cat_id):
     daily_computable = 1 if data.get("daily_computable", row["daily_computable"]) else 0
     target_percent = data.get("target_percent", row["target_percent"])
     fixed_monthly_amount = data.get("fixed_monthly_amount", row["fixed_monthly_amount"])
+    bimonthly_odd_months = 1 if data.get("bimonthly_odd_months", row["bimonthly_odd_months"]) else 0
     is_active = data.get("is_active", row["is_active"])
     try:
         target_percent = float(target_percent)
@@ -585,10 +603,14 @@ def update_category(cat_id):
         db.execute(
             """
             UPDATE categories
-            SET name = ?, target_percent = ?, is_active = ?, daily_computable = ?, fixed_monthly_amount = ?
+            SET name = ?, target_percent = ?, is_active = ?, daily_computable = ?,
+                fixed_monthly_amount = ?, bimonthly_odd_months = ?
             WHERE id = ?
             """,
-            (name, target_percent, 1 if is_active else 0, daily_computable, fixed_monthly_amount, cat_id),
+            (
+                name, target_percent, 1 if is_active else 0, daily_computable,
+                fixed_monthly_amount, bimonthly_odd_months, cat_id,
+            ),
         )
         db.commit()
     except sqlite3.IntegrityError:
@@ -1104,13 +1126,15 @@ def monthly_report():
         for r in hourly_rows:
             payroll_total += (r["hourly_rate"] or 0) * r["total_hours"]
 
+    month_num = int(month.split("-")[1])
+
     cost_breakdown = []
     total_cost = 0
     for c in categories:
         if c["is_payroll_category"]:
             amount = payroll_total or 0
         elif c["fixed_monthly_amount"] > 0:
-            amount = c["fixed_monthly_amount"]
+            amount = fixed_amount_for_month(c, month_num)
         else:
             amount = cost_by_category.get(c["id"], 0) or 0
         total_cost += amount
@@ -1215,8 +1239,11 @@ def daily_report():
             computable_subtotal += amount
         elif c["daily_computable"]:
             if c["fixed_monthly_amount"] > 0:
-                month_total = c["fixed_monthly_amount"]
-                note = f"固定月支出 {fmt_amount(month_total)} ÷ {days} 天"
+                month_total = fixed_amount_for_month(c, the_date.month)
+                if c["bimonthly_odd_months"] and month_total == 0:
+                    note = "雙月繳費，偶數月不用繳"
+                else:
+                    note = f"固定月支出 {fmt_amount(month_total)} ÷ {days} 天"
             else:
                 month_total = db.execute(
                     "SELECT COALESCE(SUM(amount), 0) AS total FROM cost_records WHERE category_id = ? AND date >= ? AND date < ?",
