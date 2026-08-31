@@ -36,21 +36,25 @@ DEFAULT_EMPLOYEES = [
 ]
 
 # 食材單價：先放 0 佔位，等實際單價確認後再到「標準成本」頁面填入
+# 單價由進貨單換算：豬肉片 540/3000g、洋蔥 320/10000g、高麗菜 700/20000g、
+# 泡菜 95/斤(以台斤600g換算)、豬絞肉 600/400g、白飯(米) 1300/30000g、
+# 蛋 800/180顆、珍珠香腸 610/(6包x150顆... 一包150顆)、百頁豆腐 3060/(6包x75片)、
+# 雞腿 685/25片、豬排 640/25片、排骨 610/20片、雞排 640/20片
 DEFAULT_INGREDIENTS = [
     # (name, unit, unit_cost)
-    ("洋蔥", "克", 0),
-    ("豬肉片", "克", 0),
-    ("白飯", "克", 0),
-    ("蛋", "顆", 0),
-    ("珍珠香腸", "顆", 0),
-    ("高麗菜", "克", 0),
-    ("百頁豆腐", "片", 0),
-    ("泡菜", "克", 0),
-    ("豬絞肉", "克", 0),
-    ("雞腿", "片", 0),
-    ("豬排", "片", 0),
-    ("排骨", "片", 0),
-    ("雞排", "片", 0),
+    ("洋蔥", "克", 0.032),
+    ("豬肉片", "克", 0.18),
+    ("白飯", "克", 0.0433),
+    ("蛋", "顆", 4.44),
+    ("珍珠香腸", "顆", 4.07),
+    ("高麗菜", "克", 0.035),
+    ("百頁豆腐", "片", 6.8),
+    ("泡菜", "克", 0.16),
+    ("豬絞肉", "克", 1.5),
+    ("雞腿", "片", 27.4),
+    ("豬排", "片", 25.6),
+    ("排骨", "片", 30.5),
+    ("雞排", "片", 32),
 ]
 
 # 8 個便當品項與各自的配方（食材名稱, 用量）；醬汁/水/油等低金額隱形成本先不計入
@@ -125,6 +129,15 @@ def _migrate_consolidate_food_categories(conn):
 def _migrate_daily_computable(conn):
     """人事、租金可以準確攤算到單日；其餘月結/進貨型項目不行。"""
     conn.execute("UPDATE categories SET daily_computable = 1 WHERE name IN ('人事', '租金')")
+
+
+def _migrate_ingredient_prices(conn):
+    """把換算好的食材單價回填進去；只補還是 0（沒被使用者自己改過）的項目，不覆蓋手動設定值。"""
+    for name, unit, unit_cost in DEFAULT_INGREDIENTS:
+        conn.execute(
+            "UPDATE ingredients SET unit_cost = ? WHERE name = ? AND unit_cost = 0",
+            (unit_cost, name),
+        )
 
 
 def init_db():
@@ -266,6 +279,7 @@ def init_db():
             )
     _migrate_consolidate_food_categories(conn)
     _migrate_daily_computable(conn)
+    _migrate_ingredient_prices(conn)
     conn.commit()
     conn.close()
 
