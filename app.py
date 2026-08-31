@@ -8,41 +8,21 @@ app = Flask(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bento.db")
 
-# 食材成本細項（取代單一的「食材」，對照店裡的成本表分類）
-# 這些項目本身沒有個別標準佔比，是全部加總後跟 FOOD_GROUP_TARGET_PERCENT 比較
-FOOD_SUBCATEGORY_NAMES = [
-    "肉",
-    "包材(食材)",
-    "雜貨",
-    "青菜",
-    "蛋",
-    "珍珠香腸",
-    "主餐配菜",
-    "套餐配菜",
-    "湯品配菜",
-    "泡菜",
-    "醬汁",
-    "冷飲",
-]
-
-FOOD_GROUP_TARGET_PERCENT = 42  # 所有食材項目加總，不可超過這個佔比
-
-# (name, target_percent, is_payroll_category)
-OTHER_CATEGORIES = [
-    ("人事", 25, 1),
-    ("租金", 12, 0),
-    ("包材/餐盒容器", 5, 0),
-    ("水電", 3, 0),
-    ("瓦斯", 2, 0),
-    ("電話費", 1, 0),
-    ("雜支", 3, 0),
-]
-
+# 食材採購沒辦法拆成細項（每2、3天一張進貨單，只能key總金額），所以食材是單一項目。
+# 一般成本項目：(name, target_percent, is_payroll_category, daily_computable)
+# daily_computable=1 代表可以準確拆算出「當日成本」（人事＝當日工時+月薪/天數、租金＝月租金/天數）；
+# 其餘項目是月結帳單（水電、瓦斯、電話費、包材、雜支）或只有每2、3天一筆的進貨（食材），
+# 沒辦法準確攤算到單日，daily_computable=0，日檢視時不計入、僅供參考。
 DEFAULT_CATEGORIES = [
-    (name, 0, i + 1, 0, 1) for i, name in enumerate(FOOD_SUBCATEGORY_NAMES)
-] + [
-    (name, target, len(FOOD_SUBCATEGORY_NAMES) + i + 1, is_payroll, 0)
-    for i, (name, target, is_payroll) in enumerate(OTHER_CATEGORIES)
+    # (name, target_percent, sort_order, is_payroll_category, daily_computable)
+    ("食材", 42, 1, 0, 0),
+    ("人事", 25, 2, 1, 1),
+    ("租金", 12, 3, 0, 1),
+    ("包材/餐盒容器", 5, 4, 0, 0),
+    ("水電", 3, 5, 0, 0),
+    ("瓦斯", 2, 6, 0, 0),
+    ("電話費", 1, 7, 0, 0),
+    ("雜支", 3, 8, 0, 0),
 ]
 
 DEFAULT_EMPLOYEES = [
@@ -53,6 +33,36 @@ DEFAULT_EMPLOYEES = [
     ("李柏成", "計時", None, 198),
     ("陳俞安", "計時", None, 198),
     ("記永安", "計時", None, 198),
+]
+
+# 食材單價：先放 0 佔位，等實際單價確認後再到「標準成本」頁面填入
+DEFAULT_INGREDIENTS = [
+    # (name, unit, unit_cost)
+    ("洋蔥", "克", 0),
+    ("豬肉片", "克", 0),
+    ("白飯", "克", 0),
+    ("蛋", "顆", 0),
+    ("珍珠香腸", "顆", 0),
+    ("高麗菜", "克", 0),
+    ("百頁豆腐", "片", 0),
+    ("泡菜", "克", 0),
+    ("豬絞肉", "克", 0),
+    ("雞腿", "片", 0),
+    ("豬排", "片", 0),
+    ("排骨", "片", 0),
+    ("雞排", "片", 0),
+]
+
+# 8 個便當品項與各自的配方（食材名稱, 用量）；醬汁/水/油等低金額隱形成本先不計入
+DEFAULT_BENTO_ITEMS = [
+    ("招牌燒肉便當", [("洋蔥", 60), ("豬肉片", 60), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
+    ("泡菜燒肉便當", [("泡菜", 60), ("豬肉片", 60), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
+    ("打拋豬肉便當", [("豬絞肉", 80), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
+    ("照燒雞腿便當", [("雞腿", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
+    ("黃金豬排便當", [("豬排", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
+    ("和風牛肉便當", [("洋蔥", 60), ("豬肉片", 80), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
+    ("厚燒排骨便當", [("排骨", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
+    ("蜜汁雞排便當", [("雞排", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
 ]
 
 
@@ -77,39 +87,44 @@ def _ensure_column(conn, table, column, decl):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
-def _migrate_food_subcategories(conn):
-    """Split the old generic 食材 category into the shop's detailed food sub-categories."""
-    old_food = conn.execute("SELECT id FROM categories WHERE name = '食材'").fetchone()
-    if old_food:
-        old_id = old_food[0]
-        used = conn.execute(
-            "SELECT COUNT(*) FROM cost_records WHERE category_id = ?", (old_id,)
-        ).fetchone()[0]
-        if used > 0:
-            conn.execute("UPDATE categories SET is_active = 0 WHERE id = ?", (old_id,))
-        else:
-            conn.execute("DELETE FROM categories WHERE id = ?", (old_id,))
+# 上一版曾把食材拆成 12 個細項，但實際上進貨單沒辦法拆，這裡合併回單一「食材」項目
+_OLD_FOOD_SUBCATEGORY_NAMES = [
+    "肉", "包材(食材)", "雜貨", "青菜", "蛋", "珍珠香腸",
+    "主餐配菜", "套餐配菜", "湯品配菜", "泡菜", "醬汁", "冷飲",
+]
 
-    existing_names = {row[0] for row in conn.execute("SELECT name FROM categories")}
-    next_order = conn.execute("SELECT COALESCE(MAX(sort_order), 0) AS m FROM categories").fetchone()[0] + 1
-    for name in FOOD_SUBCATEGORY_NAMES:
-        if name not in existing_names:
-            conn.execute(
-                "INSERT INTO categories (name, target_percent, sort_order, is_payroll_category, is_food_group) VALUES (?, 0, ?, 0, 1)",
-                (name, next_order),
-            )
-            next_order += 1
 
-    # 食材子項目沒有個別標準，只看加總；確保旗標與個別目標值一致
-    placeholders = ",".join("?" for _ in FOOD_SUBCATEGORY_NAMES)
-    conn.execute(
-        f"UPDATE categories SET is_food_group = 1, target_percent = 0 WHERE name IN ({placeholders})",
-        FOOD_SUBCATEGORY_NAMES,
-    )
-    conn.execute(
-        "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('food_group_target', ?)",
-        (FOOD_GROUP_TARGET_PERCENT,),
-    )
+def _migrate_consolidate_food_categories(conn):
+    """把曾經拆開的 12 個食材細項，合併回單一「食材」項目（金額一起帶過去，不遺失）。"""
+    food_row = conn.execute("SELECT id FROM categories WHERE name = '食材'").fetchone()
+    if food_row:
+        food_id = food_row[0]
+    else:
+        target = conn.execute(
+            "SELECT value FROM app_settings WHERE key = 'food_group_target'"
+        ).fetchone()
+        target_percent = target[0] if target else 42
+        next_order = conn.execute("SELECT COALESCE(MIN(sort_order), 1) AS m FROM categories").fetchone()[0]
+        cur = conn.execute(
+            "INSERT INTO categories (name, target_percent, sort_order, is_payroll_category) VALUES ('食材', ?, ?, 0)",
+            (target_percent, next_order),
+        )
+        food_id = cur.lastrowid
+
+    placeholders = ",".join("?" for _ in _OLD_FOOD_SUBCATEGORY_NAMES)
+    old_rows = conn.execute(
+        f"SELECT id FROM categories WHERE name IN ({placeholders})", _OLD_FOOD_SUBCATEGORY_NAMES
+    ).fetchall()
+    for (old_id,) in old_rows:
+        if old_id == food_id:
+            continue
+        conn.execute("UPDATE cost_records SET category_id = ? WHERE category_id = ?", (food_id, old_id))
+        conn.execute("DELETE FROM categories WHERE id = ?", (old_id,))
+
+
+def _migrate_daily_computable(conn):
+    """人事、租金可以準確攤算到單日；其餘月結/進貨型項目不行。"""
+    conn.execute("UPDATE categories SET daily_computable = 1 WHERE name IN ('人事', '租金')")
 
 
 def init_db():
@@ -129,12 +144,57 @@ def init_db():
     _ensure_column(conn, "categories", "is_payroll_category", "INTEGER NOT NULL DEFAULT 0")
     conn.execute("UPDATE categories SET is_payroll_category = 1 WHERE name = '人事' AND is_payroll_category = 0")
     _ensure_column(conn, "categories", "is_food_group", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "categories", "daily_computable", "INTEGER NOT NULL DEFAULT 0")
 
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS app_settings (
             key TEXT PRIMARY KEY,
             value REAL NOT NULL
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ingredients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            unit TEXT NOT NULL,
+            unit_cost REAL NOT NULL DEFAULT 0
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bento_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bento_recipe (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bento_item_id INTEGER NOT NULL,
+            ingredient_id INTEGER NOT NULL,
+            quantity REAL NOT NULL,
+            FOREIGN KEY (bento_item_id) REFERENCES bento_items(id),
+            FOREIGN KEY (ingredient_id) REFERENCES ingredients(id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bento_sales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bento_item_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            quantity INTEGER NOT NULL,
+            FOREIGN KEY (bento_item_id) REFERENCES bento_items(id),
+            UNIQUE (bento_item_id, date)
         )
         """
     )
@@ -185,14 +245,27 @@ def init_db():
     )
     if first_time:
         conn.executemany(
-            "INSERT INTO categories (name, target_percent, sort_order, is_payroll_category, is_food_group) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO categories (name, target_percent, sort_order, is_payroll_category, daily_computable) VALUES (?, ?, ?, ?, ?)",
             DEFAULT_CATEGORIES,
         )
         conn.executemany(
             "INSERT INTO employees (name, employee_type, monthly_salary, hourly_rate) VALUES (?, ?, ?, ?)",
             DEFAULT_EMPLOYEES,
         )
-    _migrate_food_subcategories(conn)
+        conn.executemany(
+            "INSERT INTO ingredients (name, unit, unit_cost) VALUES (?, ?, ?)",
+            DEFAULT_INGREDIENTS,
+        )
+        ingredient_ids = {row[0]: row[1] for row in conn.execute("SELECT name, id FROM ingredients")}
+        for bento_name, recipe in DEFAULT_BENTO_ITEMS:
+            cur = conn.execute("INSERT INTO bento_items (name) VALUES (?)", (bento_name,))
+            bento_id = cur.lastrowid
+            conn.executemany(
+                "INSERT INTO bento_recipe (bento_item_id, ingredient_id, quantity) VALUES (?, ?, ?)",
+                [(bento_id, ingredient_ids[ing_name], qty) for ing_name, qty in recipe],
+            )
+    _migrate_consolidate_food_categories(conn)
+    _migrate_daily_computable(conn)
     conn.commit()
     conn.close()
 
@@ -215,7 +288,7 @@ def index():
 
 @app.route("/report")
 def report_page():
-    return render_template("report.html", month=date.today().strftime("%Y-%m"))
+    return render_template("report.html", month=date.today().strftime("%Y-%m"), today=date.today().isoformat())
 
 
 @app.route("/settings")
@@ -226,6 +299,11 @@ def settings_page():
 @app.route("/staff")
 def staff_page():
     return render_template("staff.html", today=date.today().isoformat())
+
+
+@app.route("/recipe")
+def recipe_page():
+    return render_template("recipe.html")
 
 
 # ---------- API: categories ----------
@@ -247,11 +325,11 @@ def create_category():
     data = request.get_json(force=True) or {}
     name = (data.get("name") or "").strip()
     target_percent = data.get("target_percent", 0)
-    is_food_group = 1 if data.get("is_food_group") else 0
+    daily_computable = 1 if data.get("daily_computable") else 0
     if not name:
         return jsonify({"error": "項目名稱為必填"}), 400
     try:
-        target_percent = 0 if is_food_group else float(target_percent)
+        target_percent = float(target_percent)
     except (TypeError, ValueError):
         return jsonify({"error": "目標佔比必須為數字"}), 400
 
@@ -259,13 +337,13 @@ def create_category():
     max_order = db.execute("SELECT COALESCE(MAX(sort_order), 0) AS m FROM categories").fetchone()["m"]
     try:
         cur = db.execute(
-            "INSERT INTO categories (name, target_percent, sort_order, is_food_group) VALUES (?, ?, ?, ?)",
-            (name, target_percent, max_order + 1, is_food_group),
+            "INSERT INTO categories (name, target_percent, sort_order, daily_computable) VALUES (?, ?, ?, ?)",
+            (name, target_percent, max_order + 1, daily_computable),
         )
         db.commit()
     except sqlite3.IntegrityError:
         return jsonify({"error": "此項目名稱已存在"}), 400
-    return jsonify({"id": cur.lastrowid, "name": name, "target_percent": target_percent, "is_food_group": is_food_group})
+    return jsonify({"id": cur.lastrowid, "name": name, "target_percent": target_percent, "daily_computable": daily_computable})
 
 
 @app.route("/api/categories/<int:cat_id>", methods=["PUT"])
@@ -277,18 +355,18 @@ def update_category(cat_id):
         return jsonify({"error": "找不到此項目"}), 404
 
     name = data.get("name", row["name"]).strip()
-    is_food_group = 1 if data.get("is_food_group", row["is_food_group"]) else 0
+    daily_computable = 1 if data.get("daily_computable", row["daily_computable"]) else 0
     target_percent = data.get("target_percent", row["target_percent"])
     is_active = data.get("is_active", row["is_active"])
     try:
-        target_percent = 0 if is_food_group else float(target_percent)
+        target_percent = float(target_percent)
     except (TypeError, ValueError):
         return jsonify({"error": "目標佔比必須為數字"}), 400
 
     try:
         db.execute(
-            "UPDATE categories SET name = ?, target_percent = ?, is_active = ?, is_food_group = ? WHERE id = ?",
-            (name, target_percent, 1 if is_active else 0, is_food_group, cat_id),
+            "UPDATE categories SET name = ?, target_percent = ?, is_active = ?, daily_computable = ? WHERE id = ?",
+            (name, target_percent, 1 if is_active else 0, daily_computable, cat_id),
         )
         db.commit()
     except sqlite3.IntegrityError:
@@ -644,14 +722,8 @@ def monthly_report():
         for r in hourly_rows:
             payroll_total += (r["hourly_rate"] or 0) * r["total_hours"]
 
-    food_group_target_row = db.execute(
-        "SELECT value FROM app_settings WHERE key = 'food_group_target'"
-    ).fetchone()
-    food_group_target = food_group_target_row["value"] if food_group_target_row else FOOD_GROUP_TARGET_PERCENT
-
     cost_breakdown = []
     total_cost = 0
-    food_group_amount = 0
     for c in categories:
         if c["is_payroll_category"]:
             amount = payroll_total or 0
@@ -659,29 +731,18 @@ def monthly_report():
             amount = cost_by_category.get(c["id"], 0) or 0
         total_cost += amount
         percent = (amount / revenue * 100) if revenue > 0 else 0
-        is_food_group = bool(c["is_food_group"])
-        if is_food_group:
-            food_group_amount += amount
         cost_breakdown.append(
             {
                 "category_id": c["id"],
                 "name": c["name"],
                 "amount": amount,
                 "percent": round(percent, 2),
-                "is_food_group": is_food_group,
-                # 食材子項目沒有個別標準，只看全部加總是否超過 food_group 的標準
-                "target_percent": None if is_food_group else c["target_percent"],
-                "exceeded": False if is_food_group else percent > c["target_percent"],
+                "target_percent": c["target_percent"],
+                "exceeded": percent > c["target_percent"],
             }
         )
 
-    food_group_percent = (food_group_amount / revenue * 100) if revenue > 0 else 0
-    food_group = {
-        "amount": food_group_amount,
-        "percent": round(food_group_percent, 2),
-        "target_percent": food_group_target,
-        "exceeded": food_group_percent > food_group_target,
-    }
+    food_standard = compute_food_standard_cost(db, start, end)
 
     profit = revenue - total_cost
     profit_margin = (profit / revenue * 100) if revenue > 0 else 0
@@ -712,40 +773,327 @@ def monthly_report():
             "profit": profit,
             "profit_margin": round(profit_margin, 2),
             "cost_breakdown": cost_breakdown,
-            "food_group": food_group,
+            "food_standard": food_standard,
             "daily": daily,
         }
     )
 
 
-# ---------- API: settings ----------
-
-@app.route("/api/settings/food_group_target", methods=["GET"])
-def get_food_group_target():
-    db = get_db()
-    row = db.execute("SELECT value FROM app_settings WHERE key = 'food_group_target'").fetchone()
-    return jsonify({"target_percent": row["value"] if row else FOOD_GROUP_TARGET_PERCENT})
-
-
-@app.route("/api/settings/food_group_target", methods=["PUT"])
-def update_food_group_target():
-    data = request.get_json(force=True) or {}
-    target = data.get("target_percent")
+@app.route("/api/report/daily", methods=["GET"])
+def daily_report():
+    d = request.args.get("date")
+    if not d:
+        return jsonify({"error": "date 為必填 (格式 YYYY-MM-DD)"}), 400
     try:
-        target = float(target)
-    except (TypeError, ValueError):
-        return jsonify({"error": "標準佔比必須為數字"}), 400
+        the_date = datetime.strptime(d, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"error": "date 格式錯誤，需為 YYYY-MM-DD"}), 400
 
     db = get_db()
+    days = days_in_month(the_date)
+    month_start, month_end = month_bounds(the_date.strftime("%Y-%m"))
+
+    revenue_row = db.execute("SELECT revenue FROM daily_sales WHERE date = ?", (d,)).fetchone()
+    revenue = revenue_row["revenue"] if revenue_row else 0
+
+    categories = db.execute(
+        "SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order, id"
+    ).fetchall()
+
+    payroll_today = compute_payroll_for_date(db, the_date, days)
+
+    computable = []
+    computable_subtotal = 0
+    reference = []
+    for c in categories:
+        if c["is_payroll_category"]:
+            amount = payroll_today
+            computable.append({
+                "category_id": c["id"], "name": c["name"], "amount": amount,
+                "note": "當日計時工時 × 時薪 ＋ 正職月薪 ÷ 當月天數",
+            })
+            computable_subtotal += amount
+        elif c["daily_computable"]:
+            month_total = db.execute(
+                "SELECT COALESCE(SUM(amount), 0) AS total FROM cost_records WHERE category_id = ? AND date >= ? AND date < ?",
+                (c["id"], month_start, month_end),
+            ).fetchone()["total"]
+            amount = month_total / days
+            computable.append({
+                "category_id": c["id"], "name": c["name"], "amount": round(amount, 2),
+                "note": f"當月合計 {fmt_amount(month_total)} ÷ {days} 天",
+            })
+            computable_subtotal += amount
+        else:
+            today_amount = db.execute(
+                "SELECT COALESCE(SUM(amount), 0) AS total FROM cost_records WHERE category_id = ? AND date = ?",
+                (c["id"], d),
+            ).fetchone()["total"]
+            reference.append({"category_id": c["id"], "name": c["name"], "amount_today": today_amount})
+
+    return jsonify(
+        {
+            "date": d,
+            "days_in_month": days,
+            "revenue": revenue,
+            "computable_costs": computable,
+            "computable_subtotal": round(computable_subtotal, 2),
+            "reference_costs": reference,
+        }
+    )
+
+
+def fmt_amount(v):
+    return f"{v:,.0f}"
+
+
+def days_in_month(d):
+    if d.month == 12:
+        next_month = date(d.year + 1, 1, 1)
+    else:
+        next_month = date(d.year, d.month + 1, 1)
+    return (next_month - date(d.year, d.month, 1)).days
+
+
+def compute_payroll_for_date(db, the_date, days_in_current_month):
+    salaried = db.execute(
+        "SELECT COALESCE(SUM(monthly_salary), 0) AS total FROM employees WHERE employee_type = '正職' AND is_active = 1"
+    ).fetchone()["total"]
+    salaried_daily = salaried / days_in_current_month
+
+    hourly_rows = db.execute(
+        """
+        SELECT e.hourly_rate, COALESCE(wh.hours, 0) AS hours
+        FROM employees e
+        LEFT JOIN work_hours wh ON wh.employee_id = e.id AND wh.date = ?
+        WHERE e.employee_type = '計時' AND e.is_active = 1
+        """,
+        (the_date.isoformat(),),
+    ).fetchall()
+    hourly_today = sum((r["hourly_rate"] or 0) * r["hours"] for r in hourly_rows)
+
+    return round(salaried_daily + hourly_today, 2)
+
+
+# ---------- 便當標準成本（食材理論成本 vs 實際採購金額）----------
+
+def compute_food_standard_cost(db, start, end):
+    bento_rows = db.execute(
+        """
+        SELECT bi.id AS bento_item_id, bi.name, COALESCE(SUM(bs.quantity), 0) AS quantity
+        FROM bento_items bi
+        LEFT JOIN bento_sales bs ON bs.bento_item_id = bi.id AND bs.date >= ? AND bs.date < ?
+        WHERE bi.is_active = 1
+        GROUP BY bi.id
+        """,
+        (start, end),
+    ).fetchall()
+
+    recipe_costs = {
+        r["bento_item_id"]: r["cost"]
+        for r in db.execute(
+            """
+            SELECT br.bento_item_id, SUM(br.quantity * i.unit_cost) AS cost
+            FROM bento_recipe br JOIN ingredients i ON i.id = br.ingredient_id
+            GROUP BY br.bento_item_id
+            """
+        ).fetchall()
+    }
+
+    items = []
+    theoretical_total = 0
+    total_quantity = 0
+    for r in bento_rows:
+        cost_per_unit = recipe_costs.get(r["bento_item_id"], 0) or 0
+        subtotal = cost_per_unit * r["quantity"]
+        theoretical_total += subtotal
+        total_quantity += r["quantity"]
+        items.append(
+            {
+                "bento_item_id": r["bento_item_id"],
+                "name": r["name"],
+                "quantity": r["quantity"],
+                "standard_cost_per_unit": round(cost_per_unit, 2),
+                "theoretical_cost": round(subtotal, 2),
+            }
+        )
+
+    food_category = db.execute("SELECT id FROM categories WHERE name = '食材'").fetchone()
+    actual_cost = 0
+    if food_category:
+        actual_cost = db.execute(
+            "SELECT COALESCE(SUM(amount), 0) AS total FROM cost_records WHERE category_id = ? AND date >= ? AND date < ?",
+            (food_category["id"], start, end),
+        ).fetchone()["total"]
+
+    return {
+        "items": items,
+        "total_quantity": total_quantity,
+        "theoretical_cost": round(theoretical_total, 2),
+        "actual_cost": actual_cost,
+        "difference": round(actual_cost - theoretical_total, 2),
+    }
+
+
+# ---------- API: ingredients ----------
+
+@app.route("/api/ingredients", methods=["GET"])
+def list_ingredients():
+    db = get_db()
+    rows = db.execute("SELECT * FROM ingredients ORDER BY id").fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/ingredients", methods=["POST"])
+def create_ingredient():
+    data = request.get_json(force=True) or {}
+    name = (data.get("name") or "").strip()
+    unit = (data.get("unit") or "").strip()
+    unit_cost = data.get("unit_cost", 0)
+    if not name or not unit:
+        return jsonify({"error": "名稱與單位為必填"}), 400
+    try:
+        unit_cost = float(unit_cost)
+    except (TypeError, ValueError):
+        return jsonify({"error": "單價必須為數字"}), 400
+
+    db = get_db()
+    try:
+        cur = db.execute(
+            "INSERT INTO ingredients (name, unit, unit_cost) VALUES (?, ?, ?)",
+            (name, unit, unit_cost),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "此食材名稱已存在"}), 400
+    return jsonify({"id": cur.lastrowid, "message": "新增成功"})
+
+
+@app.route("/api/ingredients/<int:ing_id>", methods=["PUT"])
+def update_ingredient(ing_id):
+    data = request.get_json(force=True) or {}
+    db = get_db()
+    row = db.execute("SELECT * FROM ingredients WHERE id = ?", (ing_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "找不到此食材"}), 404
+
+    name = (data.get("name", row["name"]) or "").strip()
+    unit = (data.get("unit", row["unit"]) or "").strip()
+    unit_cost = data.get("unit_cost", row["unit_cost"])
+    try:
+        unit_cost = float(unit_cost)
+    except (TypeError, ValueError):
+        return jsonify({"error": "單價必須為數字"}), 400
+
+    try:
+        db.execute(
+            "UPDATE ingredients SET name = ?, unit = ?, unit_cost = ? WHERE id = ?",
+            (name, unit, unit_cost, ing_id),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "此食材名稱已存在"}), 400
+    return jsonify({"message": "更新成功"})
+
+
+# ---------- API: bento items / recipe / sales ----------
+
+@app.route("/api/bento_items", methods=["GET"])
+def list_bento_items():
+    db = get_db()
+    items = db.execute("SELECT * FROM bento_items WHERE is_active = 1 ORDER BY id").fetchall()
+    recipe_rows = db.execute(
+        """
+        SELECT br.id, br.bento_item_id, br.ingredient_id, br.quantity,
+               i.name AS ingredient_name, i.unit, i.unit_cost
+        FROM bento_recipe br JOIN ingredients i ON i.id = br.ingredient_id
+        ORDER BY br.id
+        """
+    ).fetchall()
+
+    recipes_by_item = {}
+    for r in recipe_rows:
+        recipes_by_item.setdefault(r["bento_item_id"], []).append(dict(r))
+
+    result = []
+    for item in items:
+        recipe = recipes_by_item.get(item["id"], [])
+        standard_cost = sum(r["quantity"] * r["unit_cost"] for r in recipe)
+        result.append(
+            {
+                "id": item["id"],
+                "name": item["name"],
+                "recipe": recipe,
+                "standard_cost": round(standard_cost, 2),
+            }
+        )
+    return jsonify(result)
+
+
+@app.route("/api/bento_recipe/<int:recipe_id>", methods=["PUT"])
+def update_bento_recipe(recipe_id):
+    data = request.get_json(force=True) or {}
+    quantity = data.get("quantity")
+    try:
+        quantity = float(quantity)
+    except (TypeError, ValueError):
+        return jsonify({"error": "用量必須為數字"}), 400
+
+    db = get_db()
+    row = db.execute("SELECT id FROM bento_recipe WHERE id = ?", (recipe_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "找不到此配方項目"}), 404
+    db.execute("UPDATE bento_recipe SET quantity = ? WHERE id = ?", (quantity, recipe_id))
+    db.commit()
+    return jsonify({"message": "更新成功"})
+
+
+@app.route("/api/bento_sales", methods=["GET"])
+def get_bento_sales():
+    d = request.args.get("date")
+    if not d:
+        return jsonify({"error": "date 為必填"}), 400
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT bi.id AS bento_item_id, bi.name, bs.quantity
+        FROM bento_items bi
+        LEFT JOIN bento_sales bs ON bs.bento_item_id = bi.id AND bs.date = ?
+        WHERE bi.is_active = 1
+        ORDER BY bi.id
+        """,
+        (d,),
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/bento_sales", methods=["POST"])
+def upsert_bento_sales():
+    data = request.get_json(force=True) or {}
+    d = data.get("date")
+    bento_item_id = data.get("bento_item_id")
+    quantity = data.get("quantity")
+    if not d or not bento_item_id or quantity is None:
+        return jsonify({"error": "date、bento_item_id、quantity 為必填"}), 400
+    try:
+        quantity = int(quantity)
+    except (TypeError, ValueError):
+        return jsonify({"error": "數量必須為整數"}), 400
+
+    db = get_db()
+    item = db.execute("SELECT id FROM bento_items WHERE id = ?", (bento_item_id,)).fetchone()
+    if not item:
+        return jsonify({"error": "找不到此便當品項"}), 400
+
     db.execute(
         """
-        INSERT INTO app_settings (key, value) VALUES ('food_group_target', ?)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        INSERT INTO bento_sales (bento_item_id, date, quantity) VALUES (?, ?, ?)
+        ON CONFLICT(bento_item_id, date) DO UPDATE SET quantity = excluded.quantity
         """,
-        (target,),
+        (bento_item_id, d, quantity),
     )
     db.commit()
-    return jsonify({"message": "更新成功", "target_percent": target})
+    return jsonify({"message": "已儲存"})
 
 
 init_db()

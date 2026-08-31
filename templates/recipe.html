@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<title>標準成本｜便當店營運管理系統</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">🍱 便當店營運管理</div>
+  <nav>
+    <a href="/">每日紀錄</a>
+    <a href="/report">月報表</a>
+    <a href="/staff">人事設定</a>
+    <a class="active" href="/recipe">標準成本</a>
+    <a href="/settings">設定</a>
+  </nav>
+</header>
+
+<main class="container">
+  <section class="card">
+    <h2>食材單價</h2>
+    <p class="hint">用來算出每個便當的標準成本。單價要換算成配方使用的單位（克/顆/片），不是進貨採購時的包裝單位。</p>
+    <table class="data-table">
+      <thead><tr><th>食材</th><th>單位</th><th>單價</th><th></th></tr></thead>
+      <tbody id="ingredient-list"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>便當配方與標準成本</h2>
+    <p class="hint">每個便當用到的食材與用量，系統會自動用上面的單價算出標準成本。醬汁、水、油等低金額隱形成本未列入。</p>
+    <div id="bento-list"></div>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>initRecipePage();</script>
+</body>
+</html>

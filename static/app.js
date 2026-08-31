@@ -31,6 +31,7 @@ function initDailyPage() {
   const costTotal = document.getElementById("cost-total");
   const recentList = document.getElementById("recent-list");
   const hoursList = document.getElementById("hours-list");
+  const bentoSalesList = document.getElementById("bento-sales-list");
 
   async function loadCategories() {
     const cats = await apiGet("/api/categories");
@@ -102,6 +103,40 @@ function initDailyPage() {
     });
   }
 
+  async function loadBentoSales() {
+    const rows = await apiGet(`/api/bento_sales?date=${dateInput.value}`);
+    bentoSalesList.innerHTML = rows
+      .map(
+        (r) => `
+        <tr data-bento-item-id="${r.bento_item_id}">
+          <td>${r.name}</td>
+          <td><input type="number" class="bento-qty-input" min="0" step="1" value="${r.quantity ?? ""}" style="min-width:80px" /></td>
+          <td><button class="link-btn save-bento-qty-btn">儲存</button></td>
+        </tr>`
+      )
+      .join("");
+
+    bentoSalesList.querySelectorAll("tr").forEach((tr) => {
+      const bentoItemId = Number(tr.dataset.bentoItemId);
+      tr.querySelector(".save-bento-qty-btn").addEventListener("click", async () => {
+        const quantity = tr.querySelector(".bento-qty-input").value;
+        if (quantity === "") {
+          alert("請輸入數量");
+          return;
+        }
+        try {
+          await apiSend("/api/bento_sales", "POST", {
+            date: dateInput.value,
+            bento_item_id: bentoItemId,
+            quantity,
+          });
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+    });
+  }
+
   async function loadRecent() {
     const rows = await apiGet("/api/recent?days=14");
     recentList.innerHTML = rows
@@ -155,6 +190,7 @@ function initDailyPage() {
     loadRevenue();
     loadCosts();
     loadHours();
+    loadBentoSales();
   });
 
   (async () => {
@@ -162,6 +198,7 @@ function initDailyPage() {
     await loadRevenue();
     await loadCosts();
     await loadHours();
+    await loadBentoSales();
     await loadRecent();
   })();
 }
@@ -171,12 +208,20 @@ function initDailyPage() {
 let dailyChartInstance = null;
 
 function initReportPage() {
+  const viewMode = document.getElementById("view-mode");
+  const monthField = document.getElementById("month-field");
+  const dayField = document.getElementById("day-field");
   const monthInput = document.getElementById("report-month");
+  const dateInput = document.getElementById("report-date");
+  const monthView = document.getElementById("month-view");
+  const dayView = document.getElementById("day-view");
+
   const summaryGrid = document.getElementById("summary-grid");
-  const foodGroupSummary = document.getElementById("food-group-summary");
+  const foodStandardSummary = document.getElementById("food-standard-summary");
+  const foodStandardList = document.getElementById("food-standard-list");
   const breakdownList = document.getElementById("cost-breakdown-list");
 
-  async function loadReport() {
+  async function loadMonthlyReport() {
     const data = await apiGet(`/api/report/monthly?month=${monthInput.value}`);
 
     summaryGrid.innerHTML = `
@@ -186,34 +231,36 @@ function initReportPage() {
       <div class="summary-item"><div class="label">利潤率</div><div class="value">${data.profit_margin}%</div></div>
     `;
 
-    const fg = data.food_group;
-    foodGroupSummary.innerHTML = `
-      <div class="summary-item"><div class="label">食材合計金額</div><div class="value">${fmt(fg.amount)}</div></div>
-      <div class="summary-item"><div class="label">食材合計佔比</div><div class="value">${fg.percent}%</div></div>
-      <div class="summary-item"><div class="label">合計標準</div><div class="value">${fg.target_percent}%</div></div>
+    const fs = data.food_standard;
+    const diffExceeded = fs.difference > 0;
+    foodStandardSummary.innerHTML = `
+      <div class="summary-item"><div class="label">標準成本（理論）</div><div class="value">${fmt(fs.theoretical_cost)}</div></div>
+      <div class="summary-item"><div class="label">實際採購金額</div><div class="value">${fmt(fs.actual_cost)}</div></div>
+      <div class="summary-item"><div class="label">差異</div><div class="value">${fmt(fs.difference)}</div></div>
       <div class="summary-item">
         <div class="label">狀態</div>
         <div class="value">${
-          fg.exceeded
-            ? '<span class="badge badge-warn">超過標準</span>'
-            : '<span class="badge badge-ok">正常</span>'
+          diffExceeded
+            ? '<span class="badge badge-warn">實際高於標準</span>'
+            : '<span class="badge badge-ok">在標準內</span>'
         }</div>
       </div>
     `;
+    foodStandardList.innerHTML = fs.items
+      .map(
+        (i) => `
+        <tr>
+          <td>${i.name}</td>
+          <td>${fmt(i.quantity)}</td>
+          <td>${fmt(i.standard_cost_per_unit)}</td>
+          <td>${fmt(i.theoretical_cost)}</td>
+        </tr>`
+      )
+      .join("");
 
     breakdownList.innerHTML = data.cost_breakdown
-      .map((c) => {
-        if (c.is_food_group) {
-          return `
-        <tr>
-          <td>${c.name}</td>
-          <td>${fmt(c.amount)}</td>
-          <td>${c.percent}%</td>
-          <td>—</td>
-          <td><span class="badge badge-neutral">食材類（看合計）</span></td>
-        </tr>`;
-        }
-        return `
+      .map(
+        (c) => `
         <tr class="${c.exceeded ? "row-exceeded" : ""}">
           <td>${c.name}</td>
           <td>${fmt(c.amount)}</td>
@@ -224,8 +271,8 @@ function initReportPage() {
               ? '<span class="badge badge-warn">超過目標</span>'
               : '<span class="badge badge-ok">正常</span>'
           }</td>
-        </tr>`;
-      })
+        </tr>`
+      )
       .join("");
 
     const ctx = document.getElementById("daily-chart");
@@ -247,44 +294,63 @@ function initReportPage() {
     });
   }
 
-  document.getElementById("load-report-btn").addEventListener("click", loadReport);
-  loadReport();
+  async function loadDailyReport() {
+    const data = await apiGet(`/api/report/daily?date=${dateInput.value}`);
+
+    document.getElementById("day-summary-grid").innerHTML = `
+      <div class="summary-item"><div class="label">當日營業額</div><div class="value">${fmt(data.revenue)}</div></div>
+      <div class="summary-item"><div class="label">可算日成本小計</div><div class="value">${fmt(data.computable_subtotal)}</div></div>
+      <div class="summary-item"><div class="label">當月天數</div><div class="value">${data.days_in_month}</div></div>
+    `;
+
+    document.getElementById("day-computable-list").innerHTML = data.computable_costs
+      .map((c) => `<tr><td>${c.name}</td><td>${fmt(c.amount)}</td><td>${c.note}</td></tr>`)
+      .join("");
+    document.getElementById("day-computable-total").textContent = fmt(data.computable_subtotal);
+
+    document.getElementById("day-reference-list").innerHTML = data.reference_costs
+      .map((c) => `<tr><td>${c.name}</td><td>${fmt(c.amount_today)}</td></tr>`)
+      .join("");
+  }
+
+  function applyViewMode() {
+    const isDay = viewMode.value === "day";
+    dayField.hidden = !isDay;
+    monthField.hidden = isDay;
+    dayView.hidden = !isDay;
+    monthView.hidden = isDay;
+  }
+
+  document.getElementById("load-report-btn").addEventListener("click", () => {
+    applyViewMode();
+    if (viewMode.value === "day") loadDailyReport();
+    else loadMonthlyReport();
+  });
+  viewMode.addEventListener("change", applyViewMode);
+
+  applyViewMode();
+  loadMonthlyReport();
 }
 
 // ---------------- 設定頁 ----------------
 
 function initSettingsPage() {
   const list = document.getElementById("category-list");
-  const foodGroupTargetInput = document.getElementById("food-group-target");
-
-  async function loadFoodGroupTarget() {
-    const data = await apiGet("/api/settings/food_group_target");
-    foodGroupTargetInput.value = data.target_percent;
-  }
-
-  document.getElementById("save-food-group-target-btn").addEventListener("click", async () => {
-    try {
-      await apiSend("/api/settings/food_group_target", "PUT", {
-        target_percent: foodGroupTargetInput.value,
-      });
-      alert("已儲存");
-    } catch (e) {
-      alert(e.message);
-    }
-  });
 
   async function loadCategories() {
     const cats = await apiGet("/api/categories?active=0");
     list.innerHTML = cats
       .map((c) => {
-        const targetCell = c.is_food_group
-          ? '<span class="hint">（看食材合計）</span>'
-          : `<input type="number" class="cat-target" value="${c.target_percent}" min="0" step="0.1" style="min-width:80px" ${c.is_active ? "" : "disabled"} />`;
         return `
-        <tr data-id="${c.id}" data-is-food-group="${c.is_food_group ? 1 : 0}">
+        <tr data-id="${c.id}">
           <td><input type="text" class="cat-name" value="${c.name}" ${c.is_active ? "" : "disabled"} /></td>
-          <td>${c.is_food_group ? '<span class="badge badge-neutral">食材類</span>' : "一般"}</td>
-          <td>${targetCell}</td>
+          <td><input type="number" class="cat-target" value="${c.target_percent}" min="0" step="0.1" style="min-width:80px" ${c.is_active ? "" : "disabled"} /></td>
+          <td>
+            <select class="cat-daily" ${c.is_active ? "" : "disabled"}>
+              <option value="0" ${c.daily_computable ? "" : "selected"}>否</option>
+              <option value="1" ${c.daily_computable ? "selected" : ""}>是</option>
+            </select>
+          </td>
           <td>${c.is_active ? '<span class="badge badge-ok">啟用中</span>' : '<span class="badge badge-warn">已停用</span>'}</td>
           <td>
             <button class="link-btn save-btn">儲存</button>
@@ -298,12 +364,11 @@ function initSettingsPage() {
       const id = tr.dataset.id;
       tr.querySelector(".save-btn").addEventListener("click", async () => {
         try {
-          const isFoodGroup = tr.dataset.isFoodGroup === "1";
-          const payload = { name: tr.querySelector(".cat-name").value };
-          if (!isFoodGroup) {
-            payload.target_percent = tr.querySelector(".cat-target").value;
-          }
-          await apiSend(`/api/categories/${id}`, "PUT", payload);
+          await apiSend(`/api/categories/${id}`, "PUT", {
+            name: tr.querySelector(".cat-name").value,
+            target_percent: tr.querySelector(".cat-target").value,
+            daily_computable: tr.querySelector(".cat-daily").value === "1",
+          });
           loadCategories();
         } catch (e) {
           alert(e.message);
@@ -324,23 +389,22 @@ function initSettingsPage() {
   document.getElementById("add-cat-btn").addEventListener("click", async () => {
     const name = document.getElementById("new-cat-name").value.trim();
     const target = document.getElementById("new-cat-target").value || 0;
-    const isFoodGroup = document.getElementById("new-cat-food-group").value === "1";
+    const dailyComputable = document.getElementById("new-cat-daily-computable").value === "1";
     if (!name) {
       alert("請輸入項目名稱");
       return;
     }
     try {
-      await apiSend("/api/categories", "POST", { name, target_percent: target, is_food_group: isFoodGroup });
+      await apiSend("/api/categories", "POST", { name, target_percent: target, daily_computable: dailyComputable });
       document.getElementById("new-cat-name").value = "";
       document.getElementById("new-cat-target").value = "";
-      document.getElementById("new-cat-food-group").value = "0";
+      document.getElementById("new-cat-daily-computable").value = "0";
       loadCategories();
     } catch (e) {
       alert(e.message);
     }
   });
 
-  loadFoodGroupTarget();
   loadCategories();
 }
 
@@ -421,4 +485,86 @@ function initStaffPage() {
   });
 
   loadEmployees();
+}
+
+// ---------------- 標準成本頁 ----------------
+
+function initRecipePage() {
+  const ingredientList = document.getElementById("ingredient-list");
+  const bentoList = document.getElementById("bento-list");
+
+  async function loadIngredients() {
+    const ings = await apiGet("/api/ingredients");
+    ingredientList.innerHTML = ings
+      .map(
+        (i) => `
+        <tr data-id="${i.id}">
+          <td>${i.name}</td>
+          <td>${i.unit}</td>
+          <td><input type="number" class="ing-cost" value="${i.unit_cost}" min="0" step="0.01" style="min-width:90px" /></td>
+          <td><button class="link-btn save-ing-btn">儲存</button></td>
+        </tr>`
+      )
+      .join("");
+
+    ingredientList.querySelectorAll("tr").forEach((tr) => {
+      const id = tr.dataset.id;
+      tr.querySelector(".save-ing-btn").addEventListener("click", async () => {
+        try {
+          await apiSend(`/api/ingredients/${id}`, "PUT", {
+            unit_cost: tr.querySelector(".ing-cost").value,
+          });
+          loadIngredients();
+          loadBentoItems();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+    });
+  }
+
+  async function loadBentoItems() {
+    const items = await apiGet("/api/bento_items");
+    bentoList.innerHTML = items
+      .map(
+        (item) => `
+        <div class="card" style="margin-top:1rem;">
+          <h3 style="margin:0 0 0.6rem;">${item.name} <span class="hint">標準成本：<strong id="bento-cost-${item.id}">${fmt(item.standard_cost)}</strong></span></h3>
+          <table class="data-table">
+            <thead><tr><th>食材</th><th>用量</th><th>單位</th><th></th></tr></thead>
+            <tbody>
+              ${item.recipe
+                .map(
+                  (r) => `
+                <tr data-recipe-id="${r.id}" data-bento-id="${item.id}">
+                  <td>${r.ingredient_name}</td>
+                  <td><input type="number" class="recipe-qty" value="${r.quantity}" min="0" step="0.1" style="min-width:80px" /></td>
+                  <td>${r.unit}</td>
+                  <td><button class="link-btn save-recipe-btn">儲存</button></td>
+                </tr>`
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>`
+      )
+      .join("");
+
+    bentoList.querySelectorAll("tr[data-recipe-id]").forEach((tr) => {
+      const recipeId = tr.dataset.recipeId;
+      tr.querySelector(".save-recipe-btn").addEventListener("click", async () => {
+        try {
+          await apiSend(`/api/bento_recipe/${recipeId}`, "PUT", {
+            quantity: tr.querySelector(".recipe-qty").value,
+          });
+          loadBentoItems();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+    });
+  }
+
+  loadIngredients();
+  loadBentoItems();
 }

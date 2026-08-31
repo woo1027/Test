@@ -14,6 +14,7 @@
     <a href="/">每日紀錄</a>
     <a class="active" href="/report">月報表</a>
     <a href="/staff">人事設定</a>
+    <a href="/recipe">標準成本</a>
     <a href="/settings">設定</a>
   </nav>
 </header>
@@ -21,36 +22,87 @@
 <main class="container">
   <section class="card">
     <div class="field-row">
-      <label>選擇月份
+      <label>檢視
+        <select id="view-mode">
+          <option value="month">月報表</option>
+          <option value="day">日報表</option>
+        </select>
+      </label>
+      <label id="month-field">選擇月份
         <input type="month" id="report-month" value="{{ month }}" />
+      </label>
+      <label id="day-field" hidden>選擇日期
+        <input type="date" id="report-date" value="{{ today }}" />
       </label>
       <button id="load-report-btn">查看報表</button>
     </div>
-
-    <div class="summary-grid" id="summary-grid"></div>
   </section>
 
-  <section class="card">
-    <h2>每日營收 / 成本走勢</h2>
-    <canvas id="daily-chart" height="90"></canvas>
-  </section>
+  <!-- 月報表 -->
+  <div id="month-view">
+    <section class="card">
+      <div class="summary-grid" id="summary-grid"></div>
+    </section>
 
-  <section class="card">
-    <h2>食材合計（所有食材項目加總）</h2>
-    <p class="hint">食材各項目沒有個別標準，是全部加總後跟下方的合計標準比較。</p>
-    <div class="summary-grid" id="food-group-summary"></div>
-  </section>
+    <section class="card">
+      <h2>每日營收 / 成本走勢</h2>
+      <canvas id="daily-chart" height="90"></canvas>
+    </section>
 
-  <section class="card">
-    <h2>成本項目佔比</h2>
-    <p class="hint">食材項目沒有個別標準（見上方合計），其餘項目超過自訂目標會標紅。</p>
-    <table class="data-table">
-      <thead>
-        <tr><th>項目</th><th>金額</th><th>佔營業額%</th><th>目標%</th><th>狀態</th></tr>
-      </thead>
-      <tbody id="cost-breakdown-list"></tbody>
-    </table>
-  </section>
+    <section class="card">
+      <h2>食材標準成本 vs 實際採購</h2>
+      <p class="hint">
+        標準成本＝根據配方，用當月各便當賣出數量算出的理論食材成本；實際採購＝當月食材項目的實際花費（進貨單金額）。
+        差異偏高代表可能有耗損、份量抓太多，或進貨價格上漲。
+      </p>
+      <div class="summary-grid" id="food-standard-summary"></div>
+      <div class="table-wrap" style="margin-top:1rem;">
+        <table class="data-table">
+          <thead><tr><th>品項</th><th>賣出數量</th><th>標準成本/個</th><th>理論成本</th></tr></thead>
+          <tbody id="food-standard-list"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>成本項目佔比</h2>
+      <p class="hint">超過自訂目標佔比會標紅。</p>
+      <table class="data-table">
+        <thead>
+          <tr><th>項目</th><th>金額</th><th>佔營業額%</th><th>目標%</th><th>狀態</th></tr>
+        </thead>
+        <tbody id="cost-breakdown-list"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <!-- 日報表 -->
+  <div id="day-view" hidden>
+    <section class="card">
+      <div class="summary-grid" id="day-summary-grid"></div>
+    </section>
+
+    <section class="card">
+      <h2>可計算的當日成本</h2>
+      <p class="hint">只有人事、租金能準確拆算到單日，其餘項目請看下方「僅供參考」或月報表。</p>
+      <table class="data-table">
+        <thead><tr><th>項目</th><th>金額</th><th>計算方式</th></tr></thead>
+        <tbody id="day-computable-list"></tbody>
+        <tfoot>
+          <tr><td>日成本小計</td><td id="day-computable-total">0</td><td></td></tr>
+        </tfoot>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>僅供參考（月結／進貨型項目）</h2>
+      <p class="hint">這些項目是月結帳單或每2、3天一筆進貨，無法準確拆到單日，這裡只顯示當天實際登記的金額（沒登記就是0），不列入日成本小計，也不代表當日真實花費。</p>
+      <table class="data-table">
+        <thead><tr><th>項目</th><th>今日實際登記金額</th></tr></thead>
+        <tbody id="day-reference-list"></tbody>
+      </table>
+    </section>
+  </div>
 </main>
 
 <script src="{{ url_for('static', filename='app.js') }}"></script>

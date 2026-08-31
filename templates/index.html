@@ -13,6 +13,7 @@
     <a class="active" href="/">每日紀錄</a>
     <a href="/report">月報表</a>
     <a href="/staff">人事設定</a>
+    <a href="/recipe">標準成本</a>
     <a href="/settings">設定</a>
   </nav>
 </header>
@@ -55,6 +56,17 @@
       <tfoot>
         <tr><td>當日成本合計</td><td id="cost-total">0</td><td colspan="2"></td></tr>
       </tfoot>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>各品項當日賣出數量</h2>
+    <p class="hint">用來計算標準食材成本，跟實際採購金額比對用，可以到「標準成本」頁面看比較結果。</p>
+    <table class="data-table">
+      <thead>
+        <tr><th>品項</th><th>賣出數量</th><th></th></tr>
+      </thead>
+      <tbody id="bento-sales-list"></tbody>
     </table>
   </section>
 
