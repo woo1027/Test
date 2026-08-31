@@ -14,15 +14,16 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bento.db")
 # 其餘項目是月結帳單（水電、瓦斯、電話費、包材、雜支）或只有每2、3天一筆的進貨（食材），
 # 沒辦法準確攤算到單日，daily_computable=0，日檢視時不計入、僅供參考。
 DEFAULT_CATEGORIES = [
-    # (name, target_percent, sort_order, is_payroll_category, daily_computable)
-    ("食材", 42, 1, 0, 0),
-    ("人事", 25, 2, 1, 1),
-    ("租金", 12, 3, 0, 1),
-    ("包材/餐盒容器", 5, 4, 0, 0),
-    ("水電", 3, 5, 0, 0),
-    ("瓦斯", 2, 6, 0, 0),
-    ("電話費", 1, 7, 0, 0),
-    ("雜支", 3, 8, 0, 0),
+    # (name, target_percent, sort_order, is_payroll_category, daily_computable, fixed_monthly_amount)
+    ("食材", 42, 1, 0, 0, 0),
+    ("人事", 25, 2, 1, 1, 0),
+    ("租金", 12, 3, 0, 1, 38000),
+    ("包材/餐盒容器", 5, 4, 0, 0, 0),
+    ("電費", 3, 5, 0, 1, 15000),
+    ("水費", 0.5, 6, 0, 1, 800),  # 實際每2個月繳1600（奇數月），這裡取每月平均值
+    ("瓦斯", 2, 7, 0, 1, 15000),
+    ("電話費", 1, 8, 0, 1, 1300),
+    ("雜支", 3, 9, 0, 0, 0),
 ]
 
 DEFAULT_INCOME_CATEGORIES = [
@@ -149,8 +150,39 @@ def _migrate_consolidate_food_categories(conn):
 
 
 def _migrate_daily_computable(conn):
-    """人事、租金可以準確攤算到單日；其餘月結/進貨型項目不行。"""
-    conn.execute("UPDATE categories SET daily_computable = 1 WHERE name IN ('人事', '租金')")
+    """固定金額的項目都能準確攤算到單日；其餘變動的月結/進貨型項目不行。"""
+    conn.execute(
+        "UPDATE categories SET daily_computable = 1 WHERE name IN ('人事', '租金', '電費', '水費', '瓦斯', '電話費')"
+    )
+
+
+def _migrate_split_utilities(conn):
+    """水電拆成電費、水費兩個獨立項目（繳費週期不同）。歷史資料保留在改名後的「電費」底下。"""
+    conn.execute("UPDATE categories SET name = '電費' WHERE name = '水電'")
+    water = conn.execute("SELECT id FROM categories WHERE name = '水費'").fetchone()
+    if not water:
+        next_order = conn.execute(
+            "SELECT COALESCE(MAX(sort_order), 0) AS m FROM categories"
+        ).fetchone()[0] + 1
+        conn.execute(
+            "INSERT INTO categories (name, target_percent, sort_order, daily_computable) VALUES ('水費', 0.5, ?, 1)",
+            (next_order,),
+        )
+
+
+def _migrate_fixed_monthly_amounts(conn):
+    """固定金額的項目補上金額；只補還沒設定過（還是0）的，不覆蓋手動調整過的金額。"""
+    for name, amount in [
+        ("租金", 38000),
+        ("電費", 15000),
+        ("水費", 800),  # 實際每2個月繳1600（奇數月），取每月平均值
+        ("瓦斯", 15000),
+        ("電話費", 1300),
+    ]:
+        conn.execute(
+            "UPDATE categories SET fixed_monthly_amount = ? WHERE name = ? AND fixed_monthly_amount = 0",
+            (amount, name),
+        )
 
 
 def _migrate_ingredient_prices(conn):
@@ -284,6 +316,7 @@ def init_db():
     conn.execute("UPDATE categories SET is_payroll_category = 1 WHERE name = '人事' AND is_payroll_category = 0")
     _ensure_column(conn, "categories", "is_food_group", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "categories", "daily_computable", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "categories", "fixed_monthly_amount", "REAL NOT NULL DEFAULT 0")
 
     conn.execute(
         """
@@ -408,7 +441,7 @@ def init_db():
     )
     if first_time:
         conn.executemany(
-            "INSERT INTO categories (name, target_percent, sort_order, is_payroll_category, daily_computable) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO categories (name, target_percent, sort_order, is_payroll_category, daily_computable, fixed_monthly_amount) VALUES (?, ?, ?, ?, ?, ?)",
             DEFAULT_CATEGORIES,
         )
         conn.executemany(
@@ -435,7 +468,9 @@ def init_db():
                 [(bento_id, ingredient_ids[ing_name], qty) for ing_name, qty in recipe],
             )
     _migrate_consolidate_food_categories(conn)
+    _migrate_split_utilities(conn)
     _migrate_daily_computable(conn)
+    _migrate_fixed_monthly_amounts(conn)
     _migrate_ingredient_prices(conn)
     _migrate_bento_items(conn)
     _migrate_bento_prices(conn)
@@ -502,24 +537,29 @@ def create_category():
     name = (data.get("name") or "").strip()
     target_percent = data.get("target_percent", 0)
     daily_computable = 1 if data.get("daily_computable") else 0
+    fixed_monthly_amount = data.get("fixed_monthly_amount", 0)
     if not name:
         return jsonify({"error": "項目名稱為必填"}), 400
     try:
         target_percent = float(target_percent)
+        fixed_monthly_amount = float(fixed_monthly_amount)
     except (TypeError, ValueError):
-        return jsonify({"error": "目標佔比必須為數字"}), 400
+        return jsonify({"error": "目標佔比與固定月支出金額必須為數字"}), 400
 
     db = get_db()
     max_order = db.execute("SELECT COALESCE(MAX(sort_order), 0) AS m FROM categories").fetchone()["m"]
     try:
         cur = db.execute(
-            "INSERT INTO categories (name, target_percent, sort_order, daily_computable) VALUES (?, ?, ?, ?)",
-            (name, target_percent, max_order + 1, daily_computable),
+            "INSERT INTO categories (name, target_percent, sort_order, daily_computable, fixed_monthly_amount) VALUES (?, ?, ?, ?, ?)",
+            (name, target_percent, max_order + 1, daily_computable, fixed_monthly_amount),
         )
         db.commit()
     except sqlite3.IntegrityError:
         return jsonify({"error": "此項目名稱已存在"}), 400
-    return jsonify({"id": cur.lastrowid, "name": name, "target_percent": target_percent, "daily_computable": daily_computable})
+    return jsonify({
+        "id": cur.lastrowid, "name": name, "target_percent": target_percent,
+        "daily_computable": daily_computable, "fixed_monthly_amount": fixed_monthly_amount,
+    })
 
 
 @app.route("/api/categories/<int:cat_id>", methods=["PUT"])
@@ -533,16 +573,22 @@ def update_category(cat_id):
     name = data.get("name", row["name"]).strip()
     daily_computable = 1 if data.get("daily_computable", row["daily_computable"]) else 0
     target_percent = data.get("target_percent", row["target_percent"])
+    fixed_monthly_amount = data.get("fixed_monthly_amount", row["fixed_monthly_amount"])
     is_active = data.get("is_active", row["is_active"])
     try:
         target_percent = float(target_percent)
+        fixed_monthly_amount = float(fixed_monthly_amount)
     except (TypeError, ValueError):
-        return jsonify({"error": "目標佔比必須為數字"}), 400
+        return jsonify({"error": "目標佔比與固定月支出金額必須為數字"}), 400
 
     try:
         db.execute(
-            "UPDATE categories SET name = ?, target_percent = ?, is_active = ?, daily_computable = ? WHERE id = ?",
-            (name, target_percent, 1 if is_active else 0, daily_computable, cat_id),
+            """
+            UPDATE categories
+            SET name = ?, target_percent = ?, is_active = ?, daily_computable = ?, fixed_monthly_amount = ?
+            WHERE id = ?
+            """,
+            (name, target_percent, 1 if is_active else 0, daily_computable, fixed_monthly_amount, cat_id),
         )
         db.commit()
     except sqlite3.IntegrityError:
@@ -781,11 +827,15 @@ def add_cost():
         return jsonify({"error": "金額必須為數字"}), 400
 
     db = get_db()
-    cat = db.execute("SELECT id, is_payroll_category FROM categories WHERE id = ?", (category_id,)).fetchone()
+    cat = db.execute(
+        "SELECT id, is_payroll_category, fixed_monthly_amount FROM categories WHERE id = ?", (category_id,)
+    ).fetchone()
     if not cat:
         return jsonify({"error": "找不到此成本項目"}), 400
     if cat["is_payroll_category"]:
         return jsonify({"error": "人事成本請至「人事設定」頁面登記薪資與工時，不用在這裡手動新增"}), 400
+    if cat["fixed_monthly_amount"] > 0:
+        return jsonify({"error": "此為固定月支出項目，請至「設定」頁面調整金額，不用在這裡手動新增"}), 400
 
     cur = db.execute(
         "INSERT INTO cost_records (date, category_id, amount, note) VALUES (?, ?, ?, ?)",
@@ -1059,6 +1109,8 @@ def monthly_report():
     for c in categories:
         if c["is_payroll_category"]:
             amount = payroll_total or 0
+        elif c["fixed_monthly_amount"] > 0:
+            amount = c["fixed_monthly_amount"]
         else:
             amount = cost_by_category.get(c["id"], 0) or 0
         total_cost += amount
@@ -1162,14 +1214,19 @@ def daily_report():
             })
             computable_subtotal += amount
         elif c["daily_computable"]:
-            month_total = db.execute(
-                "SELECT COALESCE(SUM(amount), 0) AS total FROM cost_records WHERE category_id = ? AND date >= ? AND date < ?",
-                (c["id"], month_start, month_end),
-            ).fetchone()["total"]
+            if c["fixed_monthly_amount"] > 0:
+                month_total = c["fixed_monthly_amount"]
+                note = f"固定月支出 {fmt_amount(month_total)} ÷ {days} 天"
+            else:
+                month_total = db.execute(
+                    "SELECT COALESCE(SUM(amount), 0) AS total FROM cost_records WHERE category_id = ? AND date >= ? AND date < ?",
+                    (c["id"], month_start, month_end),
+                ).fetchone()["total"]
+                note = f"當月合計 {fmt_amount(month_total)} ÷ {days} 天"
             amount = month_total / days
             computable.append({
                 "category_id": c["id"], "name": c["name"], "amount": round(amount, 2),
-                "note": f"當月合計 {fmt_amount(month_total)} ÷ {days} 天",
+                "note": note,
             })
             computable_subtotal += amount
         else:

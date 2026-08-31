@@ -41,7 +41,7 @@ function initDailyPage() {
   async function loadCategories() {
     const cats = await apiGet("/api/categories");
     categorySelect.innerHTML = cats
-      .filter((c) => !c.is_payroll_category)
+      .filter((c) => !c.is_payroll_category && !(c.fixed_monthly_amount > 0))
       .map((c) => `<option value="${c.id}">${c.name}</option>`)
       .join("");
   }
@@ -494,6 +494,7 @@ function initSettingsPage() {
               <option value="1" ${c.daily_computable ? "selected" : ""}>是</option>
             </select>
           </td>
+          <td><input type="number" class="cat-fixed-amount" value="${c.fixed_monthly_amount}" min="0" step="1" style="min-width:90px" ${c.is_active ? "" : "disabled"} /></td>
           <td>${c.is_active ? '<span class="badge badge-ok">啟用中</span>' : '<span class="badge badge-warn">已停用</span>'}</td>
           <td>
             <button class="link-btn save-btn">儲存</button>
@@ -511,6 +512,7 @@ function initSettingsPage() {
             name: tr.querySelector(".cat-name").value,
             target_percent: tr.querySelector(".cat-target").value,
             daily_computable: tr.querySelector(".cat-daily").value === "1",
+            fixed_monthly_amount: tr.querySelector(".cat-fixed-amount").value,
           });
           loadCategories();
         } catch (e) {
@@ -533,15 +535,19 @@ function initSettingsPage() {
     const name = document.getElementById("new-cat-name").value.trim();
     const target = document.getElementById("new-cat-target").value || 0;
     const dailyComputable = document.getElementById("new-cat-daily-computable").value === "1";
+    const fixedAmount = document.getElementById("new-cat-fixed-amount").value || 0;
     if (!name) {
       alert("請輸入項目名稱");
       return;
     }
     try {
-      await apiSend("/api/categories", "POST", { name, target_percent: target, daily_computable: dailyComputable });
+      await apiSend("/api/categories", "POST", {
+        name, target_percent: target, daily_computable: dailyComputable, fixed_monthly_amount: fixedAmount,
+      });
       document.getElementById("new-cat-name").value = "";
       document.getElementById("new-cat-target").value = "";
       document.getElementById("new-cat-daily-computable").value = "0";
+      document.getElementById("new-cat-fixed-amount").value = "";
       loadCategories();
     } catch (e) {
       alert(e.message);

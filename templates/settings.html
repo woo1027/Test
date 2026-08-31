@@ -25,10 +25,11 @@
       目標佔比＝該項目金額佔當月營業額的比例上限，月報表用這個數字判斷是否「超標」。
       「可算日成本」代表這個項目能準確拆算到單日（目前只有人事、租金），其餘月結型項目（水電、瓦斯⋯）與食材，
       因為是月結帳單或每2、3天一筆進貨，無法準確拆到單日，日報表不會計入。
+      「固定月支出」設定金額後（例如租金），每個月會自動計入這筆金額，不用再手動輸入成本紀錄；設為0代表照舊手動登記。
     </p>
     <table class="data-table">
       <thead>
-        <tr><th>項目名稱</th><th>目標佔比 %</th><th>可算日成本？</th><th>狀態</th><th></th></tr>
+        <tr><th>項目名稱</th><th>目標佔比 %</th><th>可算日成本？</th><th>固定月支出</th><th>狀態</th><th></th></tr>
       </thead>
       <tbody id="category-list"></tbody>
     </table>
@@ -48,6 +49,9 @@
           <option value="0">否</option>
           <option value="1">是</option>
         </select>
+      </label>
+      <label>固定月支出金額
+        <input type="number" id="new-cat-fixed-amount" min="0" step="1" placeholder="0＝手動登記" />
       </label>
       <button id="add-cat-btn">新增</button>
     </div>
