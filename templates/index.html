@@ -12,6 +12,7 @@
   <nav>
     <a class="active" href="/">每日紀錄</a>
     <a href="/report">月報表</a>
+    <a href="/staff">人事設定</a>
     <a href="/settings">設定</a>
   </nav>
 </header>
@@ -54,6 +55,17 @@
       <tfoot>
         <tr><td>當日成本合計</td><td id="cost-total">0</td><td colspan="2"></td></tr>
       </tfoot>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>計時人員當日工時</h2>
+    <p class="hint">正職人員薪資已在「人事設定」登記，月報表會自動計算，不需要在這裡填寫。</p>
+    <table class="data-table">
+      <thead>
+        <tr><th>姓名</th><th>時薪</th><th>當日時數</th><th></th></tr>
+      </thead>
+      <tbody id="hours-list"></tbody>
     </table>
   </section>
 

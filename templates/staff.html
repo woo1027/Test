@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<title>人事設定｜便當店營運管理系統</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">🍱 便當店營運管理</div>
+  <nav>
+    <a href="/">每日紀錄</a>
+    <a href="/report">月報表</a>
+    <a class="active" href="/staff">人事設定</a>
+    <a href="/settings">設定</a>
+  </nav>
+</header>
+
+<main class="container">
+  <section class="card">
+    <h2>員工名單</h2>
+    <p class="hint">正職以「月薪」計算，每月報表會直接列入；計時人員以「時薪 × 當月時數」計算，時數請到「每日紀錄」頁面登記。</p>
+    <table class="data-table">
+      <thead>
+        <tr><th>姓名</th><th>類型</th><th>月薪</th><th>時薪</th><th>狀態</th><th></th></tr>
+      </thead>
+      <tbody id="employee-list"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>新增員工</h2>
+    <div class="field-row">
+      <label>姓名
+        <input type="text" id="new-emp-name" placeholder="姓名" />
+      </label>
+      <label>類型
+        <select id="new-emp-type">
+          <option value="正職">正職</option>
+          <option value="計時">計時</option>
+        </select>
+      </label>
+      <label>月薪（正職填）
+        <input type="number" id="new-emp-salary" min="0" step="1" placeholder="例如 42000" />
+      </label>
+      <label>時薪（計時填）
+        <input type="number" id="new-emp-rate" min="0" step="1" placeholder="例如 198" />
+      </label>
+      <button id="add-emp-btn">新增</button>
+    </div>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+<script>initStaffPage();</script>
+</body>
+</html>

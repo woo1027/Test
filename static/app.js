@@ -30,10 +30,12 @@ function initDailyPage() {
   const costList = document.getElementById("cost-list");
   const costTotal = document.getElementById("cost-total");
   const recentList = document.getElementById("recent-list");
+  const hoursList = document.getElementById("hours-list");
 
   async function loadCategories() {
     const cats = await apiGet("/api/categories");
     categorySelect.innerHTML = cats
+      .filter((c) => !c.is_payroll_category)
       .map((c) => `<option value="${c.id}">${c.name}</option>`)
       .join("");
   }
@@ -63,6 +65,41 @@ function initDailyPage() {
       costList.appendChild(tr);
     });
     costTotal.textContent = fmt(total);
+  }
+
+  async function loadHours() {
+    const rows = await apiGet(`/api/work_hours?date=${dateInput.value}`);
+    hoursList.innerHTML = rows
+      .map(
+        (r) => `
+        <tr data-employee-id="${r.employee_id}">
+          <td>${r.name}</td>
+          <td>${fmt(r.hourly_rate)}</td>
+          <td><input type="number" class="hours-input" min="0" step="0.5" value="${r.hours ?? ""}" style="min-width:80px" /></td>
+          <td><button class="link-btn save-hours-btn">儲存</button></td>
+        </tr>`
+      )
+      .join("");
+
+    hoursList.querySelectorAll("tr").forEach((tr) => {
+      const employeeId = Number(tr.dataset.employeeId);
+      tr.querySelector(".save-hours-btn").addEventListener("click", async () => {
+        const hours = tr.querySelector(".hours-input").value;
+        if (hours === "") {
+          alert("請輸入時數");
+          return;
+        }
+        try {
+          await apiSend("/api/work_hours", "POST", {
+            date: dateInput.value,
+            employee_id: employeeId,
+            hours,
+          });
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+    });
   }
 
   async function loadRecent() {
@@ -117,12 +154,14 @@ function initDailyPage() {
   dateInput.addEventListener("change", () => {
     loadRevenue();
     loadCosts();
+    loadHours();
   });
 
   (async () => {
     await loadCategories();
     await loadRevenue();
     await loadCosts();
+    await loadHours();
     await loadRecent();
   })();
 }
@@ -251,4 +290,83 @@ function initSettingsPage() {
   });
 
   loadCategories();
+}
+
+// ---------------- 人事設定頁 ----------------
+
+function initStaffPage() {
+  const list = document.getElementById("employee-list");
+
+  async function loadEmployees() {
+    const emps = await apiGet("/api/employees?active=0");
+    list.innerHTML = emps
+      .map(
+        (e) => `
+        <tr data-id="${e.id}">
+          <td><input type="text" class="emp-name" value="${e.name}" ${e.is_active ? "" : "disabled"} /></td>
+          <td>
+            <select class="emp-type" ${e.is_active ? "" : "disabled"}>
+              <option value="正職" ${e.employee_type === "正職" ? "selected" : ""}>正職</option>
+              <option value="計時" ${e.employee_type === "計時" ? "selected" : ""}>計時</option>
+            </select>
+          </td>
+          <td><input type="number" class="emp-salary" min="0" step="1" value="${e.monthly_salary ?? ""}" style="min-width:90px" ${e.is_active ? "" : "disabled"} /></td>
+          <td><input type="number" class="emp-rate" min="0" step="1" value="${e.hourly_rate ?? ""}" style="min-width:80px" ${e.is_active ? "" : "disabled"} /></td>
+          <td>${e.is_active ? '<span class="badge badge-ok">在職</span>' : '<span class="badge badge-warn">已停用</span>'}</td>
+          <td>
+            <button class="link-btn save-btn">儲存</button>
+            <button class="link-btn del-btn">${e.is_active ? "刪除" : ""}</button>
+          </td>
+        </tr>`
+      )
+      .join("");
+
+    list.querySelectorAll("tr").forEach((tr) => {
+      const id = tr.dataset.id;
+      tr.querySelector(".save-btn").addEventListener("click", async () => {
+        try {
+          await apiSend(`/api/employees/${id}`, "PUT", {
+            name: tr.querySelector(".emp-name").value,
+            employee_type: tr.querySelector(".emp-type").value,
+            monthly_salary: tr.querySelector(".emp-salary").value,
+            hourly_rate: tr.querySelector(".emp-rate").value,
+          });
+          loadEmployees();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+      const delBtn = tr.querySelector(".del-btn");
+      if (delBtn && delBtn.textContent) {
+        delBtn.addEventListener("click", async () => {
+          if (!confirm("確定要刪除／停用此員工嗎？")) return;
+          const data = await apiSend(`/api/employees/${id}`, "DELETE");
+          alert(data.message);
+          loadEmployees();
+        });
+      }
+    });
+  }
+
+  document.getElementById("add-emp-btn").addEventListener("click", async () => {
+    const name = document.getElementById("new-emp-name").value.trim();
+    const employee_type = document.getElementById("new-emp-type").value;
+    const monthly_salary = document.getElementById("new-emp-salary").value;
+    const hourly_rate = document.getElementById("new-emp-rate").value;
+    if (!name) {
+      alert("請輸入姓名");
+      return;
+    }
+    try {
+      await apiSend("/api/employees", "POST", { name, employee_type, monthly_salary, hourly_rate });
+      document.getElementById("new-emp-name").value = "";
+      document.getElementById("new-emp-salary").value = "";
+      document.getElementById("new-emp-rate").value = "";
+      loadEmployees();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  loadEmployees();
 }
