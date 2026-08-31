@@ -1147,7 +1147,7 @@ def daily_report():
         "SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order, id"
     ).fetchall()
 
-    payroll_today = compute_payroll_for_date(db, the_date, days)
+    payroll_today, payroll_breakdown = compute_payroll_for_date(db, the_date, days)
 
     computable = []
     computable_subtotal = 0
@@ -1158,6 +1158,7 @@ def daily_report():
             computable.append({
                 "category_id": c["id"], "name": c["name"], "amount": amount,
                 "note": "當日計時工時 × 時薪 ＋ 正職月薪 ÷ 當月天數",
+                "breakdown": payroll_breakdown,
             })
             computable_subtotal += amount
         elif c["daily_computable"]:
@@ -1205,23 +1206,52 @@ def days_in_month(d):
 
 
 def compute_payroll_for_date(db, the_date, days_in_current_month):
-    salaried = db.execute(
-        "SELECT COALESCE(SUM(monthly_salary), 0) AS total FROM employees WHERE employee_type = '正職' AND is_active = 1"
-    ).fetchone()["total"]
-    salaried_daily = salaried / days_in_current_month
+    breakdown = []
+    total = 0.0
+
+    salaried_rows = db.execute(
+        "SELECT id, name, monthly_salary FROM employees WHERE employee_type = '正職' AND is_active = 1"
+    ).fetchall()
+    for r in salaried_rows:
+        daily_wage = round((r["monthly_salary"] or 0) / days_in_current_month, 2)
+        total += daily_wage
+        breakdown.append(
+            {
+                "employee_id": r["id"],
+                "name": r["name"],
+                "employee_type": "正職",
+                "hours": None,
+                "rate": None,
+                "amount": daily_wage,
+                "note": f"月薪 {fmt_amount(r['monthly_salary'] or 0)} ÷ {days_in_current_month} 天",
+            }
+        )
 
     hourly_rows = db.execute(
         """
-        SELECT e.hourly_rate, COALESCE(wh.hours, 0) AS hours
+        SELECT e.id, e.name, e.hourly_rate, COALESCE(wh.hours, 0) AS hours
         FROM employees e
         LEFT JOIN work_hours wh ON wh.employee_id = e.id AND wh.date = ?
         WHERE e.employee_type = '計時' AND e.is_active = 1
         """,
         (the_date.isoformat(),),
     ).fetchall()
-    hourly_today = sum((r["hourly_rate"] or 0) * r["hours"] for r in hourly_rows)
+    for r in hourly_rows:
+        amount = round((r["hourly_rate"] or 0) * r["hours"], 2)
+        total += amount
+        breakdown.append(
+            {
+                "employee_id": r["id"],
+                "name": r["name"],
+                "employee_type": "計時",
+                "hours": r["hours"],
+                "rate": r["hourly_rate"],
+                "amount": amount,
+                "note": f"{fmt_amount(r['hours'])} 小時 × {fmt_amount(r['hourly_rate'] or 0)}",
+            }
+        )
 
-    return round(salaried_daily + hourly_today, 2)
+    return round(total, 2), breakdown
 
 
 # ---------- 便當標準成本（食材理論成本 vs 實際採購金額）----------

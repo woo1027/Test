@@ -391,7 +391,21 @@ function initReportPage() {
     `;
 
     document.getElementById("day-computable-list").innerHTML = data.computable_costs
-      .map((c) => `<tr><td>${c.name}</td><td>${fmt(c.amount)}</td><td>${c.note}</td></tr>`)
+      .map((c) => {
+        const mainRow = `<tr><td><strong>${c.name}</strong></td><td><strong>${fmt(c.amount)}</strong></td><td>${c.note}</td></tr>`;
+        if (!c.breakdown) return mainRow;
+        const subRows = c.breakdown
+          .map(
+            (b) => `
+            <tr class="breakdown-row">
+              <td style="padding-left:1.6rem; color:var(--muted);">${b.name}（${b.employee_type}）</td>
+              <td>${fmt(b.amount)}</td>
+              <td style="color:var(--muted); font-size:0.9em;">${b.note}</td>
+            </tr>`
+          )
+          .join("");
+        return mainRow + subRows;
+      })
       .join("");
     document.getElementById("day-computable-total").textContent = fmt(data.computable_subtotal);
 
