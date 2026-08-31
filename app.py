@@ -80,6 +80,17 @@ DEFAULT_BENTO_ITEMS = [
     ("蜜汁雞排便當", [("雞排", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)] + _PACKAGING),
 ]
 
+DEFAULT_BENTO_PRICES = {
+    "招牌燒肉便當": 99,
+    "泡菜燒肉便當": 105,
+    "打拋豬肉便當": 110,
+    "照燒雞腿便當": 115,
+    "黃金豬排便當": 115,
+    "和風牛肉便當": 120,
+    "厚燒排骨便當": 125,
+    "蜜汁雞排便當": 135,
+}
+
 
 def get_db():
     if "db" not in g:
@@ -178,11 +189,23 @@ def _migrate_bento_items(conn):
         return
     ingredient_ids = {row[0]: row[1] for row in conn.execute("SELECT name, id FROM ingredients")}
     for bento_name, recipe in DEFAULT_BENTO_ITEMS:
-        cur = conn.execute("INSERT INTO bento_items (name) VALUES (?)", (bento_name,))
+        cur = conn.execute(
+            "INSERT INTO bento_items (name, selling_price) VALUES (?, ?)",
+            (bento_name, DEFAULT_BENTO_PRICES.get(bento_name, 0)),
+        )
         bento_id = cur.lastrowid
         conn.executemany(
             "INSERT INTO bento_recipe (bento_item_id, ingredient_id, quantity) VALUES (?, ?, ?)",
             [(bento_id, ingredient_ids[ing_name], qty) for ing_name, qty in recipe],
+        )
+
+
+def _migrate_bento_prices(conn):
+    """把便當售價回填進去；只補還是 0（沒被使用者自己改過）的品項，不覆蓋手動設定值。"""
+    for name, price in DEFAULT_BENTO_PRICES.items():
+        conn.execute(
+            "UPDATE bento_items SET selling_price = ? WHERE name = ? AND selling_price = 0",
+            (price, name),
         )
 
 
@@ -291,6 +314,7 @@ def init_db():
         )
         """
     )
+    _ensure_column(conn, "bento_items", "selling_price", "REAL NOT NULL DEFAULT 0")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS bento_recipe (
@@ -401,7 +425,10 @@ def init_db():
         )
         ingredient_ids = {row[0]: row[1] for row in conn.execute("SELECT name, id FROM ingredients")}
         for bento_name, recipe in DEFAULT_BENTO_ITEMS:
-            cur = conn.execute("INSERT INTO bento_items (name) VALUES (?)", (bento_name,))
+            cur = conn.execute(
+                "INSERT INTO bento_items (name, selling_price) VALUES (?, ?)",
+                (bento_name, DEFAULT_BENTO_PRICES.get(bento_name, 0)),
+            )
             bento_id = cur.lastrowid
             conn.executemany(
                 "INSERT INTO bento_recipe (bento_item_id, ingredient_id, quantity) VALUES (?, ?, ?)",
@@ -411,6 +438,7 @@ def init_db():
     _migrate_daily_computable(conn)
     _migrate_ingredient_prices(conn)
     _migrate_bento_items(conn)
+    _migrate_bento_prices(conn)
     _migrate_beef_bento(conn)
     _migrate_packaging_recipe(conn)
     _migrate_income_categories(conn)
@@ -1048,6 +1076,7 @@ def monthly_report():
 
     food_standard = compute_standard_cost_vs_actual(db, start, end, "food", "食材")
     packaging_standard = compute_standard_cost_vs_actual(db, start, end, "packaging", "包材/餐盒容器")
+    revenue_check = compute_revenue_check(db, start, end, register_revenue)
 
     profit = revenue - total_cost
     profit_margin = (profit / revenue * 100) if revenue > 0 else 0
@@ -1087,6 +1116,7 @@ def monthly_report():
             "cost_breakdown": cost_breakdown,
             "food_standard": food_standard,
             "packaging_standard": packaging_standard,
+            "revenue_check": revenue_check,
             "daily": daily,
         }
     )
@@ -1262,6 +1292,42 @@ def compute_standard_cost_vs_actual(db, start, end, ingredient_category, actual_
     }
 
 
+def compute_revenue_check(db, start, end, register_revenue):
+    """用「賣出數量 x 售價」算出理論營業額，跟收銀機實際登記的營業額比對，抓漏登記或折扣落差。"""
+    rows = db.execute(
+        """
+        SELECT bi.id AS bento_item_id, bi.name, bi.selling_price, COALESCE(SUM(bs.quantity), 0) AS quantity
+        FROM bento_items bi
+        LEFT JOIN bento_sales bs ON bs.bento_item_id = bi.id AND bs.date >= ? AND bs.date < ?
+        WHERE bi.is_active = 1
+        GROUP BY bi.id
+        """,
+        (start, end),
+    ).fetchall()
+
+    items = []
+    theoretical_revenue = 0
+    for r in rows:
+        subtotal = r["selling_price"] * r["quantity"]
+        theoretical_revenue += subtotal
+        items.append(
+            {
+                "bento_item_id": r["bento_item_id"],
+                "name": r["name"],
+                "quantity": r["quantity"],
+                "selling_price": r["selling_price"],
+                "theoretical_revenue": round(subtotal, 2),
+            }
+        )
+
+    return {
+        "items": items,
+        "theoretical_revenue": round(theoretical_revenue, 2),
+        "actual_revenue": register_revenue,
+        "difference": round(register_revenue - theoretical_revenue, 2),
+    }
+
+
 # ---------- API: ingredients ----------
 
 @app.route("/api/ingredients", methods=["GET"])
@@ -1352,15 +1418,47 @@ def list_bento_items():
     for item in items:
         recipe = recipes_by_item.get(item["id"], [])
         standard_cost = sum(r["quantity"] * r["unit_cost"] for r in recipe)
+        selling_price = item["selling_price"]
+        margin = selling_price - standard_cost
+        margin_percent = (margin / selling_price * 100) if selling_price > 0 else 0
         result.append(
             {
                 "id": item["id"],
                 "name": item["name"],
                 "recipe": recipe,
                 "standard_cost": round(standard_cost, 2),
+                "selling_price": selling_price,
+                "margin": round(margin, 2),
+                "margin_percent": round(margin_percent, 2),
             }
         )
     return jsonify(result)
+
+
+@app.route("/api/bento_items/<int:item_id>", methods=["PUT"])
+def update_bento_item(item_id):
+    data = request.get_json(force=True) or {}
+    db = get_db()
+    row = db.execute("SELECT * FROM bento_items WHERE id = ?", (item_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "找不到此便當品項"}), 404
+
+    name = (data.get("name", row["name"]) or "").strip()
+    selling_price = data.get("selling_price", row["selling_price"])
+    try:
+        selling_price = float(selling_price)
+    except (TypeError, ValueError):
+        return jsonify({"error": "售價必須為數字"}), 400
+
+    try:
+        db.execute(
+            "UPDATE bento_items SET name = ?, selling_price = ? WHERE id = ?",
+            (name, selling_price, item_id),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "此品項名稱已存在"}), 400
+    return jsonify({"message": "更新成功"})
 
 
 @app.route("/api/bento_recipe/<int:recipe_id>", methods=["PUT"])

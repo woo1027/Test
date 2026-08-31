@@ -280,6 +280,7 @@ function initReportPage() {
   const foodStandardSummary = document.getElementById("food-standard-summary");
   const foodStandardList = document.getElementById("food-standard-list");
   const packagingStandardSummary = document.getElementById("packaging-standard-summary");
+  const revenueCheckSummary = document.getElementById("revenue-check-summary");
   const breakdownList = document.getElementById("cost-breakdown-list");
 
   function renderStandardSummary(el, s) {
@@ -309,6 +310,22 @@ function initReportPage() {
       <div class="summary-item"><div class="label">總成本</div><div class="value">${fmt(data.total_cost)}</div></div>
       <div class="summary-item"><div class="label">利潤</div><div class="value">${fmt(data.profit)}</div></div>
       <div class="summary-item"><div class="label">利潤率</div><div class="value">${data.profit_margin}%</div></div>
+    `;
+
+    const rc = data.revenue_check;
+    const underCollected = rc.difference < 0;
+    revenueCheckSummary.innerHTML = `
+      <div class="summary-item"><div class="label">理論營業額</div><div class="value">${fmt(rc.theoretical_revenue)}</div></div>
+      <div class="summary-item"><div class="label">實際營業額</div><div class="value">${fmt(rc.actual_revenue)}</div></div>
+      <div class="summary-item"><div class="label">差異</div><div class="value">${fmt(rc.difference)}</div></div>
+      <div class="summary-item">
+        <div class="label">狀態</div>
+        <div class="value">${
+          underCollected
+            ? '<span class="badge badge-warn">實際低於理論</span>'
+            : '<span class="badge badge-ok">實際≥理論</span>'
+        }</div>
+      </div>
     `;
 
     const fs = data.food_standard;
@@ -621,6 +638,7 @@ function initStaffPage() {
 function initRecipePage() {
   const ingredientList = document.getElementById("ingredient-list");
   const bentoList = document.getElementById("bento-list");
+  const bentoMarginList = document.getElementById("bento-margin-list");
 
   async function loadIngredients() {
     const ings = await apiGet("/api/ingredients");
@@ -655,6 +673,35 @@ function initRecipePage() {
 
   async function loadBentoItems() {
     const items = await apiGet("/api/bento_items");
+
+    bentoMarginList.innerHTML = items
+      .map(
+        (item) => `
+        <tr data-id="${item.id}">
+          <td>${item.name}</td>
+          <td>${fmt(item.standard_cost)}</td>
+          <td><input type="number" class="bento-price" value="${item.selling_price}" min="0" step="1" style="min-width:80px" /></td>
+          <td>${fmt(item.margin)}</td>
+          <td>${item.margin_percent}%</td>
+          <td><button class="link-btn save-price-btn">儲存</button></td>
+        </tr>`
+      )
+      .join("");
+
+    bentoMarginList.querySelectorAll("tr").forEach((tr) => {
+      const id = tr.dataset.id;
+      tr.querySelector(".save-price-btn").addEventListener("click", async () => {
+        try {
+          await apiSend(`/api/bento_items/${id}`, "PUT", {
+            selling_price: tr.querySelector(".bento-price").value,
+          });
+          loadBentoItems();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+    });
+
     bentoList.innerHTML = items
       .map(
         (item) => `
