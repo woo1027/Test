@@ -20,17 +20,17 @@
 
 <main class="container">
   <section class="card">
-    <h2>食材單價</h2>
-    <p class="hint">用來算出每個便當的標準成本。單價要換算成配方使用的單位（克/顆/片），不是進貨採購時的包裝單位。</p>
+    <h2>食材與包材單價</h2>
+    <p class="hint">用來算出每個便當的標準成本。單價要換算成配方使用的單位（克/顆/片/個），不是進貨採購時的包裝單位。「包材」類（碗、蓋子）會拿去跟「包材/餐盒容器」項目的實際花費比對，不會算進食材成本。</p>
     <table class="data-table">
-      <thead><tr><th>食材</th><th>單位</th><th>單價</th><th></th></tr></thead>
+      <thead><tr><th>項目</th><th>類別</th><th>單位</th><th>單價</th><th></th></tr></thead>
       <tbody id="ingredient-list"></tbody>
     </table>
   </section>
 
   <section class="card">
     <h2>便當配方與標準成本</h2>
-    <p class="hint">每個便當用到的食材與用量，系統會自動用上面的單價算出標準成本。醬汁、水、油等低金額隱形成本未列入。</p>
+    <p class="hint">每個便當用到的食材與包材，系統會自動用上面的單價算出標準成本。醬汁、水、油等低金額隱形成本未列入。</p>
     <div id="bento-list"></div>
   </section>
 </main>

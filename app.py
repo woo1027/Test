@@ -39,36 +39,40 @@ DEFAULT_EMPLOYEES = [
 # 單價由進貨單換算：豬肉片 540/3000g、洋蔥 320/10000g、高麗菜 700/20000g、
 # 泡菜 360/3000g、豬絞肉 600/4000g、白飯(米) 1300/30000g、
 # 蛋 800/180顆、珍珠香腸 610/(6包x150顆... 一包150顆)、百頁豆腐 1150/(6包x75片)、
-# 雞腿 685/25片、豬排 520/25片、排骨 610/20片、雞排 640/20片
-# 牛肉片單價待確認，先以 0 佔位
+# 雞腿 685/25片、豬排 520/25片、排骨 610/20片、雞排 640/20片、牛肉片 750/3000g
+# 碗、蓋子是包材，跟「包材/餐盒容器」成本項目比對用，不算進食材成本
 DEFAULT_INGREDIENTS = [
-    # (name, unit, unit_cost)
-    ("洋蔥", "克", 0.032),
-    ("豬肉片", "克", 0.18),
-    ("白飯", "克", 0.0433),
-    ("蛋", "顆", 4.44),
-    ("珍珠香腸", "顆", 4.07),
-    ("高麗菜", "克", 0.035),
-    ("百頁豆腐", "片", 2.56),
-    ("泡菜", "克", 0.12),
-    ("豬絞肉", "克", 0.15),
-    ("雞腿", "片", 27.4),
-    ("豬排", "片", 20.8),
-    ("排骨", "片", 30.5),
-    ("雞排", "片", 32),
-    ("牛肉片", "克", 0),
+    # (name, unit, unit_cost, category)  category: food | packaging
+    ("洋蔥", "克", 0.032, "food"),
+    ("豬肉片", "克", 0.18, "food"),
+    ("白飯", "克", 0.0433, "food"),
+    ("蛋", "顆", 4.44, "food"),
+    ("珍珠香腸", "顆", 4.07, "food"),
+    ("高麗菜", "克", 0.035, "food"),
+    ("百頁豆腐", "片", 2.56, "food"),
+    ("泡菜", "克", 0.12, "food"),
+    ("豬絞肉", "克", 0.15, "food"),
+    ("雞腿", "片", 27.4, "food"),
+    ("豬排", "片", 20.8, "food"),
+    ("排骨", "片", 30.5, "food"),
+    ("雞排", "片", 32, "food"),
+    ("牛肉片", "克", 0.25, "food"),
+    ("碗", "個", 2.25, "packaging"),
+    ("蓋子", "個", 1.25, "packaging"),
 ]
 
 # 8 個便當品項與各自的配方（食材名稱, 用量）；醬汁/水/油等低金額隱形成本先不計入
+# 每個便當都用1個碗+1個蓋子
+_PACKAGING = [("碗", 1), ("蓋子", 1)]
 DEFAULT_BENTO_ITEMS = [
-    ("招牌燒肉便當", [("洋蔥", 60), ("豬肉片", 60), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
-    ("泡菜燒肉便當", [("泡菜", 60), ("豬肉片", 60), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
-    ("打拋豬肉便當", [("豬絞肉", 80), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
-    ("照燒雞腿便當", [("雞腿", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
-    ("黃金豬排便當", [("豬排", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
-    ("和風牛肉便當", [("洋蔥", 60), ("牛肉片", 80), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
-    ("厚燒排骨便當", [("排骨", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
-    ("蜜汁雞排便當", [("雞排", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)]),
+    ("招牌燒肉便當", [("洋蔥", 60), ("豬肉片", 60), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)] + _PACKAGING),
+    ("泡菜燒肉便當", [("泡菜", 60), ("豬肉片", 60), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)] + _PACKAGING),
+    ("打拋豬肉便當", [("豬絞肉", 80), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)] + _PACKAGING),
+    ("照燒雞腿便當", [("雞腿", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)] + _PACKAGING),
+    ("黃金豬排便當", [("豬排", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)] + _PACKAGING),
+    ("和風牛肉便當", [("洋蔥", 60), ("牛肉片", 80), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)] + _PACKAGING),
+    ("厚燒排骨便當", [("排骨", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)] + _PACKAGING),
+    ("蜜汁雞排便當", [("雞排", 1), ("白飯", 200), ("蛋", 1), ("珍珠香腸", 1), ("高麗菜", 70), ("百頁豆腐", 1)] + _PACKAGING),
 ]
 
 
@@ -135,14 +139,18 @@ def _migrate_daily_computable(conn):
 
 def _migrate_ingredient_prices(conn):
     """把換算好的食材單價回填進去；只補還是 0（沒被使用者自己改過）的項目，不覆蓋手動設定值。"""
-    for name, unit, unit_cost in DEFAULT_INGREDIENTS:
+    for name, unit, unit_cost, category in DEFAULT_INGREDIENTS:
         conn.execute(
-            "INSERT OR IGNORE INTO ingredients (name, unit, unit_cost) VALUES (?, ?, ?)",
-            (name, unit, unit_cost),
+            "INSERT OR IGNORE INTO ingredients (name, unit, unit_cost, category) VALUES (?, ?, ?, ?)",
+            (name, unit, unit_cost, category),
         )
         conn.execute(
             "UPDATE ingredients SET unit_cost = ? WHERE name = ? AND unit_cost = 0",
             (unit_cost, name),
+        )
+        conn.execute(
+            "UPDATE ingredients SET category = ? WHERE name = ?",
+            (category, name),
         )
     # 這幾項單價曾經算錯過，這裡修正成正確值；只在還是上一版算出來的舊值時才覆蓋，
     # 避免蓋掉使用者後來自己手動調整過的單價
@@ -174,6 +182,30 @@ def _migrate_beef_bento(conn):
         """,
         (beef_id,),
     )
+
+
+def _migrate_packaging_recipe(conn):
+    """幫每個已存在的便當品項補上碗、蓋子（如果配方裡還沒有）。"""
+    packaging_ids = {
+        row[0]: row[1]
+        for row in conn.execute("SELECT name, id FROM ingredients WHERE category = 'packaging'")
+    }
+    if not packaging_ids:
+        return
+    for bento_id, in conn.execute("SELECT id FROM bento_items"):
+        existing = {
+            row[0]
+            for row in conn.execute(
+                "SELECT ingredient_id FROM bento_recipe WHERE bento_item_id = ?", (bento_id,)
+            )
+        }
+        for name, quantity in _PACKAGING:
+            ing_id = packaging_ids.get(name)
+            if ing_id and ing_id not in existing:
+                conn.execute(
+                    "INSERT INTO bento_recipe (bento_item_id, ingredient_id, quantity) VALUES (?, ?, ?)",
+                    (bento_id, ing_id, quantity),
+                )
 
 
 def init_db():
@@ -214,6 +246,7 @@ def init_db():
         )
         """
     )
+    _ensure_column(conn, "ingredients", "category", "TEXT NOT NULL DEFAULT 'food'")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS bento_items (
@@ -302,7 +335,7 @@ def init_db():
             DEFAULT_EMPLOYEES,
         )
         conn.executemany(
-            "INSERT INTO ingredients (name, unit, unit_cost) VALUES (?, ?, ?)",
+            "INSERT INTO ingredients (name, unit, unit_cost, category) VALUES (?, ?, ?, ?)",
             DEFAULT_INGREDIENTS,
         )
         ingredient_ids = {row[0]: row[1] for row in conn.execute("SELECT name, id FROM ingredients")}
@@ -317,6 +350,7 @@ def init_db():
     _migrate_daily_computable(conn)
     _migrate_ingredient_prices(conn)
     _migrate_beef_bento(conn)
+    _migrate_packaging_recipe(conn)
     conn.commit()
     conn.close()
 
@@ -793,7 +827,8 @@ def monthly_report():
             }
         )
 
-    food_standard = compute_food_standard_cost(db, start, end)
+    food_standard = compute_standard_cost_vs_actual(db, start, end, "food", "食材")
+    packaging_standard = compute_standard_cost_vs_actual(db, start, end, "packaging", "包材/餐盒容器")
 
     profit = revenue - total_cost
     profit_margin = (profit / revenue * 100) if revenue > 0 else 0
@@ -825,6 +860,7 @@ def monthly_report():
             "profit_margin": round(profit_margin, 2),
             "cost_breakdown": cost_breakdown,
             "food_standard": food_standard,
+            "packaging_standard": packaging_standard,
             "daily": daily,
         }
     )
@@ -928,7 +964,11 @@ def compute_payroll_for_date(db, the_date, days_in_current_month):
 
 # ---------- 便當標準成本（食材理論成本 vs 實際採購金額）----------
 
-def compute_food_standard_cost(db, start, end):
+def compute_standard_cost_vs_actual(db, start, end, ingredient_category, actual_category_name):
+    """算出用配方推出的理論成本，跟某個成本項目當月實際花費比對。
+    ingredient_category 決定配方裡只算哪一類食材（food=食材、packaging=包材），
+    actual_category_name 是要拿來比對實際花費的成本項目名稱（例如「食材」「包材/餐盒容器」）。
+    """
     bento_rows = db.execute(
         """
         SELECT bi.id AS bento_item_id, bi.name, COALESCE(SUM(bs.quantity), 0) AS quantity
@@ -946,8 +986,10 @@ def compute_food_standard_cost(db, start, end):
             """
             SELECT br.bento_item_id, SUM(br.quantity * i.unit_cost) AS cost
             FROM bento_recipe br JOIN ingredients i ON i.id = br.ingredient_id
+            WHERE i.category = ?
             GROUP BY br.bento_item_id
-            """
+            """,
+            (ingredient_category,),
         ).fetchall()
     }
 
@@ -969,12 +1011,14 @@ def compute_food_standard_cost(db, start, end):
             }
         )
 
-    food_category = db.execute("SELECT id FROM categories WHERE name = '食材'").fetchone()
+    actual_category = db.execute(
+        "SELECT id FROM categories WHERE name = ?", (actual_category_name,)
+    ).fetchone()
     actual_cost = 0
-    if food_category:
+    if actual_category:
         actual_cost = db.execute(
             "SELECT COALESCE(SUM(amount), 0) AS total FROM cost_records WHERE category_id = ? AND date >= ? AND date < ?",
-            (food_category["id"], start, end),
+            (actual_category["id"], start, end),
         ).fetchone()["total"]
 
     return {
@@ -1001,6 +1045,9 @@ def create_ingredient():
     name = (data.get("name") or "").strip()
     unit = (data.get("unit") or "").strip()
     unit_cost = data.get("unit_cost", 0)
+    category = data.get("category", "food")
+    if category not in ("food", "packaging"):
+        category = "food"
     if not name or not unit:
         return jsonify({"error": "名稱與單位為必填"}), 400
     try:
@@ -1011,8 +1058,8 @@ def create_ingredient():
     db = get_db()
     try:
         cur = db.execute(
-            "INSERT INTO ingredients (name, unit, unit_cost) VALUES (?, ?, ?)",
-            (name, unit, unit_cost),
+            "INSERT INTO ingredients (name, unit, unit_cost, category) VALUES (?, ?, ?, ?)",
+            (name, unit, unit_cost, category),
         )
         db.commit()
     except sqlite3.IntegrityError:
@@ -1031,6 +1078,9 @@ def update_ingredient(ing_id):
     name = (data.get("name", row["name"]) or "").strip()
     unit = (data.get("unit", row["unit"]) or "").strip()
     unit_cost = data.get("unit_cost", row["unit_cost"])
+    category = data.get("category", row["category"])
+    if category not in ("food", "packaging"):
+        category = row["category"]
     try:
         unit_cost = float(unit_cost)
     except (TypeError, ValueError):
@@ -1038,8 +1088,8 @@ def update_ingredient(ing_id):
 
     try:
         db.execute(
-            "UPDATE ingredients SET name = ?, unit = ?, unit_cost = ? WHERE id = ?",
-            (name, unit, unit_cost, ing_id),
+            "UPDATE ingredients SET name = ?, unit = ?, unit_cost = ?, category = ? WHERE id = ?",
+            (name, unit, unit_cost, category, ing_id),
         )
         db.commit()
     except sqlite3.IntegrityError:

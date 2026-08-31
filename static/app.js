@@ -219,7 +219,25 @@ function initReportPage() {
   const summaryGrid = document.getElementById("summary-grid");
   const foodStandardSummary = document.getElementById("food-standard-summary");
   const foodStandardList = document.getElementById("food-standard-list");
+  const packagingStandardSummary = document.getElementById("packaging-standard-summary");
   const breakdownList = document.getElementById("cost-breakdown-list");
+
+  function renderStandardSummary(el, s) {
+    const exceeded = s.difference > 0;
+    el.innerHTML = `
+      <div class="summary-item"><div class="label">標準成本（理論）</div><div class="value">${fmt(s.theoretical_cost)}</div></div>
+      <div class="summary-item"><div class="label">實際花費</div><div class="value">${fmt(s.actual_cost)}</div></div>
+      <div class="summary-item"><div class="label">差異</div><div class="value">${fmt(s.difference)}</div></div>
+      <div class="summary-item">
+        <div class="label">狀態</div>
+        <div class="value">${
+          exceeded
+            ? '<span class="badge badge-warn">實際高於標準</span>'
+            : '<span class="badge badge-ok">在標準內</span>'
+        }</div>
+      </div>
+    `;
+  }
 
   async function loadMonthlyReport() {
     const data = await apiGet(`/api/report/monthly?month=${monthInput.value}`);
@@ -232,20 +250,8 @@ function initReportPage() {
     `;
 
     const fs = data.food_standard;
-    const diffExceeded = fs.difference > 0;
-    foodStandardSummary.innerHTML = `
-      <div class="summary-item"><div class="label">標準成本（理論）</div><div class="value">${fmt(fs.theoretical_cost)}</div></div>
-      <div class="summary-item"><div class="label">實際採購金額</div><div class="value">${fmt(fs.actual_cost)}</div></div>
-      <div class="summary-item"><div class="label">差異</div><div class="value">${fmt(fs.difference)}</div></div>
-      <div class="summary-item">
-        <div class="label">狀態</div>
-        <div class="value">${
-          diffExceeded
-            ? '<span class="badge badge-warn">實際高於標準</span>'
-            : '<span class="badge badge-ok">在標準內</span>'
-        }</div>
-      </div>
-    `;
+    renderStandardSummary(foodStandardSummary, fs);
+    renderStandardSummary(packagingStandardSummary, data.packaging_standard);
     foodStandardList.innerHTML = fs.items
       .map(
         (i) => `
@@ -500,6 +506,7 @@ function initRecipePage() {
         (i) => `
         <tr data-id="${i.id}">
           <td>${i.name}</td>
+          <td>${i.category === "packaging" ? '<span class="badge badge-neutral">包材</span>' : "食材"}</td>
           <td>${i.unit}</td>
           <td><input type="number" class="ing-cost" value="${i.unit_cost}" min="0" step="0.01" style="min-width:90px" /></td>
           <td><button class="link-btn save-ing-btn">儲存</button></td>
