@@ -173,6 +173,7 @@ let dailyChartInstance = null;
 function initReportPage() {
   const monthInput = document.getElementById("report-month");
   const summaryGrid = document.getElementById("summary-grid");
+  const foodGroupSummary = document.getElementById("food-group-summary");
   const breakdownList = document.getElementById("cost-breakdown-list");
 
   async function loadReport() {
@@ -185,9 +186,34 @@ function initReportPage() {
       <div class="summary-item"><div class="label">利潤率</div><div class="value">${data.profit_margin}%</div></div>
     `;
 
+    const fg = data.food_group;
+    foodGroupSummary.innerHTML = `
+      <div class="summary-item"><div class="label">食材合計金額</div><div class="value">${fmt(fg.amount)}</div></div>
+      <div class="summary-item"><div class="label">食材合計佔比</div><div class="value">${fg.percent}%</div></div>
+      <div class="summary-item"><div class="label">合計標準</div><div class="value">${fg.target_percent}%</div></div>
+      <div class="summary-item">
+        <div class="label">狀態</div>
+        <div class="value">${
+          fg.exceeded
+            ? '<span class="badge badge-warn">超過標準</span>'
+            : '<span class="badge badge-ok">正常</span>'
+        }</div>
+      </div>
+    `;
+
     breakdownList.innerHTML = data.cost_breakdown
-      .map(
-        (c) => `
+      .map((c) => {
+        if (c.is_food_group) {
+          return `
+        <tr>
+          <td>${c.name}</td>
+          <td>${fmt(c.amount)}</td>
+          <td>${c.percent}%</td>
+          <td>—</td>
+          <td><span class="badge badge-neutral">食材類（看合計）</span></td>
+        </tr>`;
+        }
+        return `
         <tr class="${c.exceeded ? "row-exceeded" : ""}">
           <td>${c.name}</td>
           <td>${fmt(c.amount)}</td>
@@ -198,8 +224,8 @@ function initReportPage() {
               ? '<span class="badge badge-warn">超過目標</span>'
               : '<span class="badge badge-ok">正常</span>'
           }</td>
-        </tr>`
-      )
+        </tr>`;
+      })
       .join("");
 
     const ctx = document.getElementById("daily-chart");
@@ -229,32 +255,55 @@ function initReportPage() {
 
 function initSettingsPage() {
   const list = document.getElementById("category-list");
+  const foodGroupTargetInput = document.getElementById("food-group-target");
+
+  async function loadFoodGroupTarget() {
+    const data = await apiGet("/api/settings/food_group_target");
+    foodGroupTargetInput.value = data.target_percent;
+  }
+
+  document.getElementById("save-food-group-target-btn").addEventListener("click", async () => {
+    try {
+      await apiSend("/api/settings/food_group_target", "PUT", {
+        target_percent: foodGroupTargetInput.value,
+      });
+      alert("已儲存");
+    } catch (e) {
+      alert(e.message);
+    }
+  });
 
   async function loadCategories() {
     const cats = await apiGet("/api/categories?active=0");
     list.innerHTML = cats
-      .map(
-        (c) => `
-        <tr data-id="${c.id}">
+      .map((c) => {
+        const targetCell = c.is_food_group
+          ? '<span class="hint">（看食材合計）</span>'
+          : `<input type="number" class="cat-target" value="${c.target_percent}" min="0" step="0.1" style="min-width:80px" ${c.is_active ? "" : "disabled"} />`;
+        return `
+        <tr data-id="${c.id}" data-is-food-group="${c.is_food_group ? 1 : 0}">
           <td><input type="text" class="cat-name" value="${c.name}" ${c.is_active ? "" : "disabled"} /></td>
-          <td><input type="number" class="cat-target" value="${c.target_percent}" min="0" step="0.1" style="min-width:80px" ${c.is_active ? "" : "disabled"} /></td>
+          <td>${c.is_food_group ? '<span class="badge badge-neutral">食材類</span>' : "一般"}</td>
+          <td>${targetCell}</td>
           <td>${c.is_active ? '<span class="badge badge-ok">啟用中</span>' : '<span class="badge badge-warn">已停用</span>'}</td>
           <td>
             <button class="link-btn save-btn">儲存</button>
             <button class="link-btn del-btn">${c.is_active ? "刪除" : ""}</button>
           </td>
-        </tr>`
-      )
+        </tr>`;
+      })
       .join("");
 
     list.querySelectorAll("tr").forEach((tr) => {
       const id = tr.dataset.id;
       tr.querySelector(".save-btn").addEventListener("click", async () => {
         try {
-          await apiSend(`/api/categories/${id}`, "PUT", {
-            name: tr.querySelector(".cat-name").value,
-            target_percent: tr.querySelector(".cat-target").value,
-          });
+          const isFoodGroup = tr.dataset.isFoodGroup === "1";
+          const payload = { name: tr.querySelector(".cat-name").value };
+          if (!isFoodGroup) {
+            payload.target_percent = tr.querySelector(".cat-target").value;
+          }
+          await apiSend(`/api/categories/${id}`, "PUT", payload);
           loadCategories();
         } catch (e) {
           alert(e.message);
@@ -275,20 +324,23 @@ function initSettingsPage() {
   document.getElementById("add-cat-btn").addEventListener("click", async () => {
     const name = document.getElementById("new-cat-name").value.trim();
     const target = document.getElementById("new-cat-target").value || 0;
+    const isFoodGroup = document.getElementById("new-cat-food-group").value === "1";
     if (!name) {
       alert("請輸入項目名稱");
       return;
     }
     try {
-      await apiSend("/api/categories", "POST", { name, target_percent: target });
+      await apiSend("/api/categories", "POST", { name, target_percent: target, is_food_group: isFoodGroup });
       document.getElementById("new-cat-name").value = "";
       document.getElementById("new-cat-target").value = "";
+      document.getElementById("new-cat-food-group").value = "0";
       loadCategories();
     } catch (e) {
       alert(e.message);
     }
   });
 
+  loadFoodGroupTarget();
   loadCategories();
 }
 

@@ -134,6 +134,7 @@ button.link-btn:hover { background: var(--danger-bg); }
 }
 .badge-ok { background: #e6f4ea; color: var(--ok); }
 .badge-warn { background: var(--danger-bg); color: var(--danger); }
+.badge-neutral { background: var(--bg); color: var(--muted); }
 
 .summary-grid {
   display: grid;

@@ -19,11 +19,22 @@
 
 <main class="container">
   <section class="card">
+    <h2>食材合計標準</h2>
+    <p class="hint">食材類項目（肉、雜貨、青菜⋯）沒有個別標準，是全部加總後跟這個數字比較，超過就算超標。</p>
+    <div class="field-row">
+      <label>食材合計標準 %
+        <input type="number" id="food-group-target" min="0" step="0.1" style="min-width:100px" />
+      </label>
+      <button id="save-food-group-target-btn">儲存</button>
+    </div>
+  </section>
+
+  <section class="card">
     <h2>成本項目與目標佔比</h2>
-    <p class="hint">目標佔比＝該項目金額佔當月營業額的比例上限。月報表會用這個數字判斷該項目是否「超標」。</p>
+    <p class="hint">目標佔比＝該項目金額佔當月營業額的比例上限，月報表用這個數字判斷是否「超標」。標示為「食材類」的項目沒有個別目標，請見上方的食材合計標準。</p>
     <table class="data-table">
       <thead>
-        <tr><th>項目名稱</th><th>目標佔比 %</th><th>狀態</th><th></th></tr>
+        <tr><th>項目名稱</th><th>類型</th><th>目標佔比 %</th><th>狀態</th><th></th></tr>
       </thead>
       <tbody id="category-list"></tbody>
     </table>
@@ -37,6 +48,12 @@
       </label>
       <label>目標佔比 %
         <input type="number" id="new-cat-target" min="0" step="0.1" placeholder="0" />
+      </label>
+      <label>納入食材合計？
+        <select id="new-cat-food-group">
+          <option value="0">否</option>
+          <option value="1">是</option>
+        </select>
       </label>
       <button id="add-cat-btn">新增</button>
     </div>

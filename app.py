@@ -9,21 +9,23 @@ app = Flask(__name__)
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bento.db")
 
 # 食材成本細項（取代單一的「食材」，對照店裡的成本表分類）
-# (name, target_percent) -- 佔比抓自113年11月成本表，部分項目手寫不易辨識，先設為 0，請至設定頁確認/修正
-FOOD_SUBCATEGORIES = [
-    ("肉", 18.77),
-    ("包材(食材)", 3.99),
-    ("雜貨", 5.33),
-    ("青菜", 4.08),
-    ("蛋", 0),
-    ("珍珠香腸", 2.53),
-    ("主餐配菜", 3.39),
-    ("套餐配菜", 0.20),
-    ("湯品配菜", 0),
-    ("泡菜", 0),
-    ("醬汁", 2.68),
-    ("冷飲", 0),
+# 這些項目本身沒有個別標準佔比，是全部加總後跟 FOOD_GROUP_TARGET_PERCENT 比較
+FOOD_SUBCATEGORY_NAMES = [
+    "肉",
+    "包材(食材)",
+    "雜貨",
+    "青菜",
+    "蛋",
+    "珍珠香腸",
+    "主餐配菜",
+    "套餐配菜",
+    "湯品配菜",
+    "泡菜",
+    "醬汁",
+    "冷飲",
 ]
+
+FOOD_GROUP_TARGET_PERCENT = 42  # 所有食材項目加總，不可超過這個佔比
 
 # (name, target_percent, is_payroll_category)
 OTHER_CATEGORIES = [
@@ -37,9 +39,9 @@ OTHER_CATEGORIES = [
 ]
 
 DEFAULT_CATEGORIES = [
-    (name, target, i + 1, 0) for i, (name, target) in enumerate(FOOD_SUBCATEGORIES)
+    (name, 0, i + 1, 0, 1) for i, name in enumerate(FOOD_SUBCATEGORY_NAMES)
 ] + [
-    (name, target, len(FOOD_SUBCATEGORIES) + i + 1, is_payroll)
+    (name, target, len(FOOD_SUBCATEGORY_NAMES) + i + 1, is_payroll, 0)
     for i, (name, target, is_payroll) in enumerate(OTHER_CATEGORIES)
 ]
 
@@ -90,13 +92,24 @@ def _migrate_food_subcategories(conn):
 
     existing_names = {row[0] for row in conn.execute("SELECT name FROM categories")}
     next_order = conn.execute("SELECT COALESCE(MAX(sort_order), 0) AS m FROM categories").fetchone()[0] + 1
-    for name, target in FOOD_SUBCATEGORIES:
+    for name in FOOD_SUBCATEGORY_NAMES:
         if name not in existing_names:
             conn.execute(
-                "INSERT INTO categories (name, target_percent, sort_order, is_payroll_category) VALUES (?, ?, ?, 0)",
-                (name, target, next_order),
+                "INSERT INTO categories (name, target_percent, sort_order, is_payroll_category, is_food_group) VALUES (?, 0, ?, 0, 1)",
+                (name, next_order),
             )
             next_order += 1
+
+    # 食材子項目沒有個別標準，只看加總；確保旗標與個別目標值一致
+    placeholders = ",".join("?" for _ in FOOD_SUBCATEGORY_NAMES)
+    conn.execute(
+        f"UPDATE categories SET is_food_group = 1, target_percent = 0 WHERE name IN ({placeholders})",
+        FOOD_SUBCATEGORY_NAMES,
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('food_group_target', ?)",
+        (FOOD_GROUP_TARGET_PERCENT,),
+    )
 
 
 def init_db():
@@ -115,6 +128,16 @@ def init_db():
     )
     _ensure_column(conn, "categories", "is_payroll_category", "INTEGER NOT NULL DEFAULT 0")
     conn.execute("UPDATE categories SET is_payroll_category = 1 WHERE name = '人事' AND is_payroll_category = 0")
+    _ensure_column(conn, "categories", "is_food_group", "INTEGER NOT NULL DEFAULT 0")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value REAL NOT NULL
+        )
+        """
+    )
 
     conn.execute(
         """
@@ -162,15 +185,14 @@ def init_db():
     )
     if first_time:
         conn.executemany(
-            "INSERT INTO categories (name, target_percent, sort_order, is_payroll_category) VALUES (?, ?, ?, ?)",
+            "INSERT INTO categories (name, target_percent, sort_order, is_payroll_category, is_food_group) VALUES (?, ?, ?, ?, ?)",
             DEFAULT_CATEGORIES,
         )
         conn.executemany(
             "INSERT INTO employees (name, employee_type, monthly_salary, hourly_rate) VALUES (?, ?, ?, ?)",
             DEFAULT_EMPLOYEES,
         )
-    else:
-        _migrate_food_subcategories(conn)
+    _migrate_food_subcategories(conn)
     conn.commit()
     conn.close()
 
@@ -225,10 +247,11 @@ def create_category():
     data = request.get_json(force=True) or {}
     name = (data.get("name") or "").strip()
     target_percent = data.get("target_percent", 0)
+    is_food_group = 1 if data.get("is_food_group") else 0
     if not name:
         return jsonify({"error": "項目名稱為必填"}), 400
     try:
-        target_percent = float(target_percent)
+        target_percent = 0 if is_food_group else float(target_percent)
     except (TypeError, ValueError):
         return jsonify({"error": "目標佔比必須為數字"}), 400
 
@@ -236,13 +259,13 @@ def create_category():
     max_order = db.execute("SELECT COALESCE(MAX(sort_order), 0) AS m FROM categories").fetchone()["m"]
     try:
         cur = db.execute(
-            "INSERT INTO categories (name, target_percent, sort_order) VALUES (?, ?, ?)",
-            (name, target_percent, max_order + 1),
+            "INSERT INTO categories (name, target_percent, sort_order, is_food_group) VALUES (?, ?, ?, ?)",
+            (name, target_percent, max_order + 1, is_food_group),
         )
         db.commit()
     except sqlite3.IntegrityError:
         return jsonify({"error": "此項目名稱已存在"}), 400
-    return jsonify({"id": cur.lastrowid, "name": name, "target_percent": target_percent})
+    return jsonify({"id": cur.lastrowid, "name": name, "target_percent": target_percent, "is_food_group": is_food_group})
 
 
 @app.route("/api/categories/<int:cat_id>", methods=["PUT"])
@@ -254,17 +277,18 @@ def update_category(cat_id):
         return jsonify({"error": "找不到此項目"}), 404
 
     name = data.get("name", row["name"]).strip()
+    is_food_group = 1 if data.get("is_food_group", row["is_food_group"]) else 0
     target_percent = data.get("target_percent", row["target_percent"])
     is_active = data.get("is_active", row["is_active"])
     try:
-        target_percent = float(target_percent)
+        target_percent = 0 if is_food_group else float(target_percent)
     except (TypeError, ValueError):
         return jsonify({"error": "目標佔比必須為數字"}), 400
 
     try:
         db.execute(
-            "UPDATE categories SET name = ?, target_percent = ?, is_active = ? WHERE id = ?",
-            (name, target_percent, 1 if is_active else 0, cat_id),
+            "UPDATE categories SET name = ?, target_percent = ?, is_active = ?, is_food_group = ? WHERE id = ?",
+            (name, target_percent, 1 if is_active else 0, is_food_group, cat_id),
         )
         db.commit()
     except sqlite3.IntegrityError:
@@ -620,8 +644,14 @@ def monthly_report():
         for r in hourly_rows:
             payroll_total += (r["hourly_rate"] or 0) * r["total_hours"]
 
+    food_group_target_row = db.execute(
+        "SELECT value FROM app_settings WHERE key = 'food_group_target'"
+    ).fetchone()
+    food_group_target = food_group_target_row["value"] if food_group_target_row else FOOD_GROUP_TARGET_PERCENT
+
     cost_breakdown = []
     total_cost = 0
+    food_group_amount = 0
     for c in categories:
         if c["is_payroll_category"]:
             amount = payroll_total or 0
@@ -629,16 +659,29 @@ def monthly_report():
             amount = cost_by_category.get(c["id"], 0) or 0
         total_cost += amount
         percent = (amount / revenue * 100) if revenue > 0 else 0
+        is_food_group = bool(c["is_food_group"])
+        if is_food_group:
+            food_group_amount += amount
         cost_breakdown.append(
             {
                 "category_id": c["id"],
                 "name": c["name"],
                 "amount": amount,
                 "percent": round(percent, 2),
-                "target_percent": c["target_percent"],
-                "exceeded": percent > c["target_percent"],
+                "is_food_group": is_food_group,
+                # 食材子項目沒有個別標準，只看全部加總是否超過 food_group 的標準
+                "target_percent": None if is_food_group else c["target_percent"],
+                "exceeded": False if is_food_group else percent > c["target_percent"],
             }
         )
+
+    food_group_percent = (food_group_amount / revenue * 100) if revenue > 0 else 0
+    food_group = {
+        "amount": food_group_amount,
+        "percent": round(food_group_percent, 2),
+        "target_percent": food_group_target,
+        "exceeded": food_group_percent > food_group_target,
+    }
 
     profit = revenue - total_cost
     profit_margin = (profit / revenue * 100) if revenue > 0 else 0
@@ -669,9 +712,40 @@ def monthly_report():
             "profit": profit,
             "profit_margin": round(profit_margin, 2),
             "cost_breakdown": cost_breakdown,
+            "food_group": food_group,
             "daily": daily,
         }
     )
+
+
+# ---------- API: settings ----------
+
+@app.route("/api/settings/food_group_target", methods=["GET"])
+def get_food_group_target():
+    db = get_db()
+    row = db.execute("SELECT value FROM app_settings WHERE key = 'food_group_target'").fetchone()
+    return jsonify({"target_percent": row["value"] if row else FOOD_GROUP_TARGET_PERCENT})
+
+
+@app.route("/api/settings/food_group_target", methods=["PUT"])
+def update_food_group_target():
+    data = request.get_json(force=True) or {}
+    target = data.get("target_percent")
+    try:
+        target = float(target)
+    except (TypeError, ValueError):
+        return jsonify({"error": "標準佔比必須為數字"}), 400
+
+    db = get_db()
+    db.execute(
+        """
+        INSERT INTO app_settings (key, value) VALUES ('food_group_target', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (target,),
+    )
+    db.commit()
+    return jsonify({"message": "更新成功", "target_percent": target})
 
 
 init_db()
