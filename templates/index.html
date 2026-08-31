@@ -85,6 +85,32 @@
   </section>
 
   <section class="card">
+    <h2>今日試算</h2>
+    <p class="hint">用目前已登記的資料算出來的當日總覽，儲存營業額/成本/工時後按下方按鈕重新試算。</p>
+    <div class="field-row">
+      <button id="recalc-today-btn">重新試算</button>
+    </div>
+    <div class="summary-grid" id="today-summary-grid"></div>
+
+    <h3 style="margin-top:1.5rem;">可計算的當日成本</h3>
+    <p class="hint">只有人事、租金能準確拆算到單日，其餘項目請看下方「僅供參考」。</p>
+    <table class="data-table">
+      <thead><tr><th>項目</th><th>金額</th><th>計算方式</th></tr></thead>
+      <tbody id="today-computable-list"></tbody>
+      <tfoot>
+        <tr><td>日成本小計</td><td id="today-computable-total">0</td><td></td></tr>
+      </tfoot>
+    </table>
+
+    <h3 style="margin-top:1.5rem;">僅供參考（月結／進貨型項目）</h3>
+    <p class="hint">月結帳單或每2、3天一筆進貨的項目，這裡只顯示今天實際登記的金額，不列入日成本小計。</p>
+    <table class="data-table">
+      <thead><tr><th>項目</th><th>今日實際登記金額</th></tr></thead>
+      <tbody id="today-reference-list"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
     <h2>各品項當日賣出數量</h2>
     <p class="hint">用來計算標準食材成本，跟實際採購金額比對用，可以到「標準成本」頁面看比較結果。</p>
     <table class="data-table">

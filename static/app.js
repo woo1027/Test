@@ -130,6 +130,7 @@ function initDailyPage() {
             employee_id: employeeId,
             hours,
           });
+          loadTodayComputation();
         } catch (e) {
           alert(e.message);
         }
@@ -195,6 +196,7 @@ function initDailyPage() {
         revenue: revenueInput.value,
       });
       loadRecent();
+      loadTodayComputation();
       alert("已儲存營業額");
     } catch (e) {
       alert(e.message);
@@ -217,6 +219,7 @@ function initDailyPage() {
       costNote.value = "";
       loadCosts();
       loadRecent();
+      loadTodayComputation();
     } catch (e) {
       alert(e.message);
     }
@@ -238,10 +241,47 @@ function initDailyPage() {
       incomeNote.value = "";
       loadIncome();
       loadRecent();
+      loadTodayComputation();
     } catch (e) {
       alert(e.message);
     }
   });
+
+  async function loadTodayComputation() {
+    const data = await apiGet(`/api/report/daily?date=${dateInput.value}`);
+
+    document.getElementById("today-summary-grid").innerHTML = `
+      <div class="summary-item"><div class="label">當日營業額</div><div class="value">${fmt(data.register_revenue)}</div></div>
+      <div class="summary-item"><div class="label">當日特別收入</div><div class="value">${fmt(data.special_income)}</div></div>
+      <div class="summary-item"><div class="label">當日總收入</div><div class="value">${fmt(data.revenue)}</div></div>
+      <div class="summary-item"><div class="label">可算日成本小計</div><div class="value">${fmt(data.computable_subtotal)}</div></div>
+    `;
+
+    document.getElementById("today-computable-list").innerHTML = data.computable_costs
+      .map((c) => {
+        const mainRow = `<tr><td><strong>${c.name}</strong></td><td><strong>${fmt(c.amount)}</strong></td><td>${c.note}</td></tr>`;
+        if (!c.breakdown) return mainRow;
+        const subRows = c.breakdown
+          .map(
+            (b) => `
+            <tr class="breakdown-row">
+              <td style="padding-left:1.6rem; color:var(--muted);">${b.name}（${b.employee_type}）</td>
+              <td>${fmt(b.amount)}</td>
+              <td style="color:var(--muted); font-size:0.9em;">${b.note}</td>
+            </tr>`
+          )
+          .join("");
+        return mainRow + subRows;
+      })
+      .join("");
+    document.getElementById("today-computable-total").textContent = fmt(data.computable_subtotal);
+
+    document.getElementById("today-reference-list").innerHTML = data.reference_costs
+      .map((c) => `<tr><td>${c.name}</td><td>${fmt(c.amount_today)}</td></tr>`)
+      .join("");
+  }
+
+  document.getElementById("recalc-today-btn").addEventListener("click", loadTodayComputation);
 
   dateInput.addEventListener("change", () => {
     loadRevenue();
@@ -249,6 +289,7 @@ function initDailyPage() {
     loadIncome();
     loadHours();
     loadBentoSales();
+    loadTodayComputation();
   });
 
   (async () => {
@@ -260,6 +301,7 @@ function initDailyPage() {
     await loadHours();
     await loadBentoSales();
     await loadRecent();
+    await loadTodayComputation();
   })();
 }
 
