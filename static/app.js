@@ -32,6 +32,11 @@ function initDailyPage() {
   const recentList = document.getElementById("recent-list");
   const hoursList = document.getElementById("hours-list");
   const bentoSalesList = document.getElementById("bento-sales-list");
+  const incomeCategorySelect = document.getElementById("income-category");
+  const incomeAmount = document.getElementById("income-amount");
+  const incomeNote = document.getElementById("income-note");
+  const incomeList = document.getElementById("income-list");
+  const incomeTotal = document.getElementById("income-total");
 
   async function loadCategories() {
     const cats = await apiGet("/api/categories");
@@ -39,6 +44,35 @@ function initDailyPage() {
       .filter((c) => !c.is_payroll_category)
       .map((c) => `<option value="${c.id}">${c.name}</option>`)
       .join("");
+  }
+
+  async function loadIncomeCategories() {
+    const cats = await apiGet("/api/income_categories");
+    incomeCategorySelect.innerHTML = cats
+      .map((c) => `<option value="${c.id}">${c.name}</option>`)
+      .join("");
+  }
+
+  async function loadIncome() {
+    const rows = await apiGet(`/api/income?date=${dateInput.value}`);
+    incomeList.innerHTML = "";
+    let total = 0;
+    rows.forEach((r) => {
+      total += r.amount;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${r.category_name}</td>
+        <td>${fmt(r.amount)}</td>
+        <td>${r.note || ""}</td>
+        <td><button class="link-btn" data-id="${r.id}">刪除</button></td>
+      `;
+      tr.querySelector("button").addEventListener("click", async () => {
+        await apiSend(`/api/income/${r.id}`, "DELETE");
+        loadIncome();
+      });
+      incomeList.appendChild(tr);
+    });
+    incomeTotal.textContent = fmt(total);
   }
 
   async function loadRevenue() {
@@ -144,6 +178,8 @@ function initDailyPage() {
         (r) => `
         <tr>
           <td>${r.date}</td>
+          <td>${fmt(r.register_revenue)}</td>
+          <td>${fmt(r.special_income)}</td>
           <td>${fmt(r.revenue)}</td>
           <td>${fmt(r.cost)}</td>
           <td>${fmt(r.profit)}</td>
@@ -186,17 +222,41 @@ function initDailyPage() {
     }
   });
 
+  document.getElementById("add-income-btn").addEventListener("click", async () => {
+    if (!incomeAmount.value) {
+      alert("請輸入金額");
+      return;
+    }
+    try {
+      await apiSend("/api/income", "POST", {
+        date: dateInput.value,
+        category_id: Number(incomeCategorySelect.value),
+        amount: incomeAmount.value,
+        note: incomeNote.value,
+      });
+      incomeAmount.value = "";
+      incomeNote.value = "";
+      loadIncome();
+      loadRecent();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
   dateInput.addEventListener("change", () => {
     loadRevenue();
     loadCosts();
+    loadIncome();
     loadHours();
     loadBentoSales();
   });
 
   (async () => {
     await loadCategories();
+    await loadIncomeCategories();
     await loadRevenue();
     await loadCosts();
+    await loadIncome();
     await loadHours();
     await loadBentoSales();
     await loadRecent();
@@ -243,7 +303,9 @@ function initReportPage() {
     const data = await apiGet(`/api/report/monthly?month=${monthInput.value}`);
 
     summaryGrid.innerHTML = `
-      <div class="summary-item"><div class="label">總營業額</div><div class="value">${fmt(data.revenue)}</div></div>
+      <div class="summary-item"><div class="label">營業額</div><div class="value">${fmt(data.register_revenue)}</div></div>
+      <div class="summary-item"><div class="label">特別收入</div><div class="value">${fmt(data.special_income)}</div></div>
+      <div class="summary-item"><div class="label">總收入</div><div class="value">${fmt(data.revenue)}</div></div>
       <div class="summary-item"><div class="label">總成本</div><div class="value">${fmt(data.total_cost)}</div></div>
       <div class="summary-item"><div class="label">利潤</div><div class="value">${fmt(data.profit)}</div></div>
       <div class="summary-item"><div class="label">利潤率</div><div class="value">${data.profit_margin}%</div></div>
@@ -304,7 +366,9 @@ function initReportPage() {
     const data = await apiGet(`/api/report/daily?date=${dateInput.value}`);
 
     document.getElementById("day-summary-grid").innerHTML = `
-      <div class="summary-item"><div class="label">當日營業額</div><div class="value">${fmt(data.revenue)}</div></div>
+      <div class="summary-item"><div class="label">當日營業額</div><div class="value">${fmt(data.register_revenue)}</div></div>
+      <div class="summary-item"><div class="label">當日特別收入</div><div class="value">${fmt(data.special_income)}</div></div>
+      <div class="summary-item"><div class="label">當日總收入</div><div class="value">${fmt(data.revenue)}</div></div>
       <div class="summary-item"><div class="label">可算日成本小計</div><div class="value">${fmt(data.computable_subtotal)}</div></div>
       <div class="summary-item"><div class="label">當月天數</div><div class="value">${data.days_in_month}</div></div>
     `;
@@ -412,6 +476,65 @@ function initSettingsPage() {
   });
 
   loadCategories();
+
+  const incomeList = document.getElementById("income-category-list");
+
+  async function loadIncomeCategories() {
+    const cats = await apiGet("/api/income_categories?active=0");
+    incomeList.innerHTML = cats
+      .map(
+        (c) => `
+        <tr data-id="${c.id}">
+          <td><input type="text" class="income-cat-name" value="${c.name}" ${c.is_active ? "" : "disabled"} /></td>
+          <td>${c.is_active ? '<span class="badge badge-ok">啟用中</span>' : '<span class="badge badge-warn">已停用</span>'}</td>
+          <td>
+            <button class="link-btn save-income-cat-btn">儲存</button>
+            <button class="link-btn del-income-cat-btn">${c.is_active ? "刪除" : ""}</button>
+          </td>
+        </tr>`
+      )
+      .join("");
+
+    incomeList.querySelectorAll("tr").forEach((tr) => {
+      const id = tr.dataset.id;
+      tr.querySelector(".save-income-cat-btn").addEventListener("click", async () => {
+        try {
+          await apiSend(`/api/income_categories/${id}`, "PUT", {
+            name: tr.querySelector(".income-cat-name").value,
+          });
+          loadIncomeCategories();
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+      const delBtn = tr.querySelector(".del-income-cat-btn");
+      if (delBtn && delBtn.textContent) {
+        delBtn.addEventListener("click", async () => {
+          if (!confirm("確定要刪除／停用此項目嗎？")) return;
+          const data = await apiSend(`/api/income_categories/${id}`, "DELETE");
+          alert(data.message);
+          loadIncomeCategories();
+        });
+      }
+    });
+  }
+
+  document.getElementById("add-income-cat-btn").addEventListener("click", async () => {
+    const name = document.getElementById("new-income-cat-name").value.trim();
+    if (!name) {
+      alert("請輸入項目名稱");
+      return;
+    }
+    try {
+      await apiSend("/api/income_categories", "POST", { name });
+      document.getElementById("new-income-cat-name").value = "";
+      loadIncomeCategories();
+    } catch (e) {
+      alert(e.message);
+    }
+  });
+
+  loadIncomeCategories();
 }
 
 // ---------------- 人事設定頁 ----------------

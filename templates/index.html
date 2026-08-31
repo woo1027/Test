@@ -57,6 +57,31 @@
         <tr><td>當日成本合計</td><td id="cost-total">0</td><td colspan="2"></td></tr>
       </tfoot>
     </table>
+
+    <h3>新增特別收入</h3>
+    <p class="hint">跟營業額分開登記的收入，例如外送平台入帳、退款、其他雜項收入，月報表會跟營業額合併算總收入。</p>
+    <div class="field-row">
+      <label>收入項目
+        <select id="income-category"></select>
+      </label>
+      <label>金額
+        <input type="number" id="income-amount" min="0" step="1" placeholder="金額" />
+      </label>
+      <label>備註
+        <input type="text" id="income-note" placeholder="選填" />
+      </label>
+      <button id="add-income-btn">新增</button>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr><th>項目</th><th>金額</th><th>備註</th><th></th></tr>
+      </thead>
+      <tbody id="income-list"></tbody>
+      <tfoot>
+        <tr><td>當日特別收入合計</td><td id="income-total">0</td><td colspan="2"></td></tr>
+      </tfoot>
+    </table>
   </section>
 
   <section class="card">
@@ -85,7 +110,7 @@
     <h2>最近 14 天概況</h2>
     <table class="data-table">
       <thead>
-        <tr><th>日期</th><th>營業額</th><th>成本</th><th>毛利</th></tr>
+        <tr><th>日期</th><th>營業額</th><th>特別收入</th><th>總收入</th><th>成本</th><th>毛利</th></tr>
       </thead>
       <tbody id="recent-list"></tbody>
     </table>

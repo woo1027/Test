@@ -25,6 +25,11 @@ DEFAULT_CATEGORIES = [
     ("雜支", 3, 8, 0, 0),
 ]
 
+DEFAULT_INCOME_CATEGORIES = [
+    # (name, sort_order)
+    ("其他雜項收入", 1),
+]
+
 DEFAULT_EMPLOYEES = [
     # (name, employee_type, monthly_salary, hourly_rate)
     ("林翰于", "正職", 42000, None),
@@ -166,6 +171,21 @@ def _migrate_ingredient_prices(conn):
         )
 
 
+def _migrate_bento_items(conn):
+    """幫已存在（但建立於便當品項功能之前）的資料庫種入8個便當品項與配方。"""
+    existing_count = conn.execute("SELECT COUNT(*) FROM bento_items").fetchone()[0]
+    if existing_count > 0:
+        return
+    ingredient_ids = {row[0]: row[1] for row in conn.execute("SELECT name, id FROM ingredients")}
+    for bento_name, recipe in DEFAULT_BENTO_ITEMS:
+        cur = conn.execute("INSERT INTO bento_items (name) VALUES (?)", (bento_name,))
+        bento_id = cur.lastrowid
+        conn.executemany(
+            "INSERT INTO bento_recipe (bento_item_id, ingredient_id, quantity) VALUES (?, ?, ?)",
+            [(bento_id, ingredient_ids[ing_name], qty) for ing_name, qty in recipe],
+        )
+
+
 def _migrate_beef_bento(conn):
     """和風牛肉便當原本誤用「豬肉片」，改成正確的「牛肉片」。"""
     beef_row = conn.execute("SELECT id FROM ingredients WHERE name = '牛肉片'").fetchone()
@@ -206,6 +226,21 @@ def _migrate_packaging_recipe(conn):
                     "INSERT INTO bento_recipe (bento_item_id, ingredient_id, quantity) VALUES (?, ?, ?)",
                     (bento_id, ing_id, quantity),
                 )
+
+
+def _migrate_income_categories(conn):
+    """幫已存在的資料庫補上收入項目（如果還沒有的話）。"""
+    existing_names = {row[0] for row in conn.execute("SELECT name FROM income_categories")}
+    next_order = conn.execute(
+        "SELECT COALESCE(MAX(sort_order), 0) AS m FROM income_categories"
+    ).fetchone()[0] + 1
+    for name, _ in DEFAULT_INCOME_CATEGORIES:
+        if name not in existing_names:
+            conn.execute(
+                "INSERT INTO income_categories (name, sort_order) VALUES (?, ?)",
+                (name, next_order),
+            )
+            next_order += 1
 
 
 def init_db():
@@ -325,6 +360,28 @@ def init_db():
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS income_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS income_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            category_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            note TEXT DEFAULT '',
+            FOREIGN KEY (category_id) REFERENCES income_categories(id)
+        )
+        """
+    )
     if first_time:
         conn.executemany(
             "INSERT INTO categories (name, target_percent, sort_order, is_payroll_category, daily_computable) VALUES (?, ?, ?, ?, ?)",
@@ -333,6 +390,10 @@ def init_db():
         conn.executemany(
             "INSERT INTO employees (name, employee_type, monthly_salary, hourly_rate) VALUES (?, ?, ?, ?)",
             DEFAULT_EMPLOYEES,
+        )
+        conn.executemany(
+            "INSERT INTO income_categories (name, sort_order) VALUES (?, ?)",
+            DEFAULT_INCOME_CATEGORIES,
         )
         conn.executemany(
             "INSERT INTO ingredients (name, unit, unit_cost, category) VALUES (?, ?, ?, ?)",
@@ -349,8 +410,10 @@ def init_db():
     _migrate_consolidate_food_categories(conn)
     _migrate_daily_computable(conn)
     _migrate_ingredient_prices(conn)
+    _migrate_bento_items(conn)
     _migrate_beef_bento(conn)
     _migrate_packaging_recipe(conn)
+    _migrate_income_categories(conn)
     conn.commit()
     conn.close()
 
@@ -508,6 +571,142 @@ def upsert_sales():
     )
     db.commit()
     return jsonify({"message": "已儲存", "date": d, "revenue": revenue})
+
+
+# ---------- API: income categories ----------
+
+@app.route("/api/income_categories", methods=["GET"])
+def list_income_categories():
+    db = get_db()
+    only_active = request.args.get("active", "1") == "1"
+    query = "SELECT * FROM income_categories"
+    if only_active:
+        query += " WHERE is_active = 1"
+    query += " ORDER BY sort_order, id"
+    rows = db.execute(query).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/income_categories", methods=["POST"])
+def create_income_category():
+    data = request.get_json(force=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "項目名稱為必填"}), 400
+
+    db = get_db()
+    max_order = db.execute(
+        "SELECT COALESCE(MAX(sort_order), 0) AS m FROM income_categories"
+    ).fetchone()["m"]
+    try:
+        cur = db.execute(
+            "INSERT INTO income_categories (name, sort_order) VALUES (?, ?)",
+            (name, max_order + 1),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "此項目名稱已存在"}), 400
+    return jsonify({"id": cur.lastrowid, "name": name})
+
+
+@app.route("/api/income_categories/<int:cat_id>", methods=["PUT"])
+def update_income_category(cat_id):
+    data = request.get_json(force=True) or {}
+    db = get_db()
+    row = db.execute("SELECT * FROM income_categories WHERE id = ?", (cat_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "找不到此項目"}), 404
+
+    name = data.get("name", row["name"]).strip()
+    is_active = data.get("is_active", row["is_active"])
+    try:
+        db.execute(
+            "UPDATE income_categories SET name = ?, is_active = ? WHERE id = ?",
+            (name, 1 if is_active else 0, cat_id),
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "此項目名稱已存在"}), 400
+    return jsonify({"message": "更新成功"})
+
+
+@app.route("/api/income_categories/<int:cat_id>", methods=["DELETE"])
+def delete_income_category(cat_id):
+    db = get_db()
+    used = db.execute(
+        "SELECT COUNT(*) AS c FROM income_records WHERE category_id = ?", (cat_id,)
+    ).fetchone()["c"]
+    if used > 0:
+        db.execute("UPDATE income_categories SET is_active = 0 WHERE id = ?", (cat_id,))
+        db.commit()
+        return jsonify({"message": "此項目已有歷史紀錄，已改為停用而非刪除"})
+    db.execute("DELETE FROM income_categories WHERE id = ?", (cat_id,))
+    db.commit()
+    return jsonify({"message": "刪除成功"})
+
+
+# ---------- API: special income records ----------
+
+@app.route("/api/income", methods=["GET"])
+def list_income():
+    d = request.args.get("date")
+    db = get_db()
+    if d:
+        rows = db.execute(
+            """
+            SELECT ir.id, ir.date, ir.amount, ir.note, c.id AS category_id, c.name AS category_name
+            FROM income_records ir JOIN income_categories c ON c.id = ir.category_id
+            WHERE ir.date = ?
+            ORDER BY ir.id DESC
+            """,
+            (d,),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            """
+            SELECT ir.id, ir.date, ir.amount, ir.note, c.id AS category_id, c.name AS category_name
+            FROM income_records ir JOIN income_categories c ON c.id = ir.category_id
+            ORDER BY ir.date DESC, ir.id DESC
+            LIMIT 100
+            """
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/income", methods=["POST"])
+def add_income():
+    data = request.get_json(force=True) or {}
+    d = data.get("date")
+    category_id = data.get("category_id")
+    amount = data.get("amount")
+    note = (data.get("note") or "").strip()
+
+    if not d or not category_id or amount is None:
+        return jsonify({"error": "date、category_id、amount 為必填"}), 400
+    try:
+        amount = float(amount)
+    except (TypeError, ValueError):
+        return jsonify({"error": "金額必須為數字"}), 400
+
+    db = get_db()
+    cat = db.execute("SELECT id FROM income_categories WHERE id = ?", (category_id,)).fetchone()
+    if not cat:
+        return jsonify({"error": "找不到此收入項目"}), 400
+
+    cur = db.execute(
+        "INSERT INTO income_records (date, category_id, amount, note) VALUES (?, ?, ?, ?)",
+        (d, category_id, amount, note),
+    )
+    db.commit()
+    return jsonify({"id": cur.lastrowid, "message": "新增成功"})
+
+
+@app.route("/api/income/<int:income_id>", methods=["DELETE"])
+def delete_income(income_id):
+    db = get_db()
+    db.execute("DELETE FROM income_records WHERE id = ?", (income_id,))
+    db.commit()
+    return jsonify({"message": "刪除成功"})
 
 
 # ---------- API: cost records ----------
@@ -738,12 +937,27 @@ def recent_summary():
     ).fetchall()
     cost_by_date = {r["date"]: r["total"] for r in cost_rows}
 
+    income_rows = db.execute(
+        "SELECT date, SUM(amount) AS total FROM income_records WHERE date BETWEEN ? AND ? GROUP BY date",
+        (start.isoformat(), end.isoformat()),
+    ).fetchall()
+    income_by_date = {r["date"]: r["total"] for r in income_rows}
+
     result = []
     for i in range(days):
         d = (start + timedelta(days=i)).isoformat()
-        revenue = revenue_by_date.get(d, 0) or 0
+        register_revenue = revenue_by_date.get(d, 0) or 0
+        special_income = income_by_date.get(d, 0) or 0
+        revenue = register_revenue + special_income
         cost = cost_by_date.get(d, 0) or 0
-        result.append({"date": d, "revenue": revenue, "cost": cost, "profit": revenue - cost})
+        result.append({
+            "date": d,
+            "revenue": revenue,
+            "register_revenue": register_revenue,
+            "special_income": special_income,
+            "cost": cost,
+            "profit": revenue - cost,
+        })
     result.reverse()
     return jsonify(result)
 
@@ -760,10 +974,15 @@ def monthly_report():
 
     db = get_db()
 
-    revenue = db.execute(
+    register_revenue = db.execute(
         "SELECT COALESCE(SUM(revenue), 0) AS total FROM daily_sales WHERE date >= ? AND date < ?",
         (start, end),
     ).fetchone()["total"]
+    special_income = db.execute(
+        "SELECT COALESCE(SUM(amount), 0) AS total FROM income_records WHERE date >= ? AND date < ?",
+        (start, end),
+    ).fetchone()["total"]
+    revenue = register_revenue + special_income
 
     categories = db.execute(
         """
@@ -842,10 +1061,15 @@ def monthly_report():
         (start, end),
     ).fetchall()
     daily_cost_map = {r["date"]: r["total"] for r in daily_cost_rows}
+    daily_income_rows = db.execute(
+        "SELECT date, SUM(amount) AS total FROM income_records WHERE date >= ? AND date < ? GROUP BY date",
+        (start, end),
+    ).fetchall()
+    daily_income_map = {r["date"]: r["total"] for r in daily_income_rows}
     daily = [
         {
             "date": r["date"],
-            "revenue": r["revenue"],
+            "revenue": r["revenue"] + (daily_income_map.get(r["date"], 0) or 0),
             "cost": daily_cost_map.get(r["date"], 0) or 0,
         }
         for r in daily_rows
@@ -855,6 +1079,8 @@ def monthly_report():
         {
             "month": month,
             "revenue": revenue,
+            "register_revenue": register_revenue,
+            "special_income": special_income,
             "total_cost": total_cost,
             "profit": profit,
             "profit_margin": round(profit_margin, 2),
@@ -881,7 +1107,11 @@ def daily_report():
     month_start, month_end = month_bounds(the_date.strftime("%Y-%m"))
 
     revenue_row = db.execute("SELECT revenue FROM daily_sales WHERE date = ?", (d,)).fetchone()
-    revenue = revenue_row["revenue"] if revenue_row else 0
+    register_revenue = revenue_row["revenue"] if revenue_row else 0
+    special_income_today = db.execute(
+        "SELECT COALESCE(SUM(amount), 0) AS total FROM income_records WHERE date = ?", (d,)
+    ).fetchone()["total"]
+    revenue = register_revenue + special_income_today
 
     categories = db.execute(
         "SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order, id"
@@ -923,6 +1153,8 @@ def daily_report():
             "date": d,
             "days_in_month": days,
             "revenue": revenue,
+            "register_revenue": register_revenue,
+            "special_income": special_income_today,
             "computable_costs": computable,
             "computable_subtotal": round(computable_subtotal, 2),
             "reference_costs": reference,

@@ -52,6 +52,23 @@
       <button id="add-cat-btn">新增</button>
     </div>
   </section>
+
+  <section class="card">
+    <h2>特別收入項目</h2>
+    <p class="hint">跟營業額分開登記的收入（例如外送平台入帳、退款），月報表會跟營業額合併算總收入。</p>
+    <table class="data-table">
+      <thead>
+        <tr><th>項目名稱</th><th>狀態</th><th></th></tr>
+      </thead>
+      <tbody id="income-category-list"></tbody>
+    </table>
+    <div class="field-row" style="margin-top:1rem;">
+      <label>項目名稱
+        <input type="text" id="new-income-cat-name" placeholder="例如：外送平台入帳" />
+      </label>
+      <button id="add-income-cat-btn">新增</button>
+    </div>
+  </section>
 </main>
 
 <script src="{{ url_for('static', filename='app.js') }}"></script>
