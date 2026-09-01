@@ -1043,20 +1043,32 @@ def recent_summary():
     ).fetchall()
     income_by_date = {r["date"]: r["total"] for r in income_rows}
 
+    fixed_categories = db.execute(
+        "SELECT * FROM categories WHERE is_active = 1 AND daily_computable = 1 AND fixed_monthly_amount > 0"
+    ).fetchall()
+
     result = []
     for i in range(days):
-        d = (start + timedelta(days=i)).isoformat()
+        the_date = start + timedelta(days=i)
+        d = the_date.isoformat()
         register_revenue = revenue_by_date.get(d, 0) or 0
         special_income = income_by_date.get(d, 0) or 0
         revenue = register_revenue + special_income
-        cost = cost_by_date.get(d, 0) or 0
+
+        days_this_month = days_in_month(the_date)
+        payroll_today, _ = compute_payroll_for_date(db, the_date, days_this_month)
+        fixed_today = sum(
+            fixed_amount_for_month(c, the_date.month) / days_this_month for c in fixed_categories
+        )
+        cost = (cost_by_date.get(d, 0) or 0) + payroll_today + fixed_today
+
         result.append({
             "date": d,
             "revenue": revenue,
             "register_revenue": register_revenue,
             "special_income": special_income,
-            "cost": cost,
-            "profit": revenue - cost,
+            "cost": round(cost, 2),
+            "profit": round(revenue - cost, 2),
         })
     result.reverse()
     return jsonify(result)
