@@ -1275,6 +1275,10 @@ def daily_report():
             ).fetchone()["total"]
             reference.append({"category_id": c["id"], "name": c["name"], "amount_today": today_amount})
 
+    reference_total_today = sum(r["amount_today"] for r in reference)
+    total_cost = round(computable_subtotal + reference_total_today, 2)
+    profit = round(revenue - total_cost, 2)
+
     return jsonify(
         {
             "date": d,
@@ -1285,6 +1289,8 @@ def daily_report():
             "computable_costs": computable,
             "computable_subtotal": round(computable_subtotal, 2),
             "reference_costs": reference,
+            "total_cost": total_cost,
+            "profit": profit,
         }
     )
 

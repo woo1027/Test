@@ -254,7 +254,8 @@ function initDailyPage() {
       <div class="summary-item"><div class="label">當日營業額</div><div class="value">${fmt(data.register_revenue)}</div></div>
       <div class="summary-item"><div class="label">當日特別收入</div><div class="value">${fmt(data.special_income)}</div></div>
       <div class="summary-item"><div class="label">當日總收入</div><div class="value">${fmt(data.revenue)}</div></div>
-      <div class="summary-item"><div class="label">可算日成本小計</div><div class="value">${fmt(data.computable_subtotal)}</div></div>
+      <div class="summary-item"><div class="label">當日總成本</div><div class="value">${fmt(data.total_cost)}</div></div>
+      <div class="summary-item"><div class="label">今日利潤</div><div class="value">${fmt(data.profit)}</div></div>
     `;
 
     document.getElementById("today-computable-list").innerHTML = data.computable_costs
@@ -428,7 +429,8 @@ function initReportPage() {
       <div class="summary-item"><div class="label">當日營業額</div><div class="value">${fmt(data.register_revenue)}</div></div>
       <div class="summary-item"><div class="label">當日特別收入</div><div class="value">${fmt(data.special_income)}</div></div>
       <div class="summary-item"><div class="label">當日總收入</div><div class="value">${fmt(data.revenue)}</div></div>
-      <div class="summary-item"><div class="label">可算日成本小計</div><div class="value">${fmt(data.computable_subtotal)}</div></div>
+      <div class="summary-item"><div class="label">當日總成本</div><div class="value">${fmt(data.total_cost)}</div></div>
+      <div class="summary-item"><div class="label">今日利潤</div><div class="value">${fmt(data.profit)}</div></div>
       <div class="summary-item"><div class="label">當月天數</div><div class="value">${data.days_in_month}</div></div>
     `;
 
